@@ -511,10 +511,10 @@ class MainActivity : AppCompatActivity() {
         val previewView = PreviewView(this).apply {
             scaleType = PreviewView.ScaleType.FILL_CENTER
             implementationMode = PreviewView.ImplementationMode.PERFORMANCE
-            setOnTouchListener { _, event ->
-                if (event.action == MotionEvent.ACTION_DOWN) focusAt(previewView, event.x, event.y)
-                true
-            }
+        }
+        previewView.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_DOWN) focusAt(previewView, event.x, event.y)
+            true
         }
         root.addView(previewView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         scannerOverlay = QrScannerOverlayView(this)
