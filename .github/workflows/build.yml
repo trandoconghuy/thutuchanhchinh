@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android APK PRO
 
 on:
   push:
@@ -22,6 +22,7 @@ jobs:
       run: |
         mkdir -p app/src/main/java/com/example/cccdscanner
         mkdir -p app/src/main/res/layout
+        mkdir -p app/src/main/res/drawable
 
         cat << 'EOF' > gradle.properties
         android.useAndroidX=true
@@ -31,7 +32,7 @@ jobs:
         cat << 'EOF' > settings.gradle.kts
         pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
         dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
-        rootProject.name = "CCCDScanner"
+        rootProject.name = "CCCDScannerPro"
         include(":app")
         EOF
 
@@ -54,26 +55,45 @@ jobs:
                 applicationId = "com.example.cccdscanner"
                 minSdk = 24
                 targetSdk = 34
-                versionCode = 1
-                versionName = "1.0"
+                versionCode = 2
+                versionName = "2.0 Pro"
             }
             compileOptions {
                 sourceCompatibility = JavaVersion.VERSION_17
                 targetCompatibility = JavaVersion.VERSION_17
             }
             kotlinOptions { jvmTarget = "17" }
+            buildFeatures { viewBinding = true }
         }
         dependencies {
             implementation("androidx.core:core-ktx:1.12.0")
             implementation("androidx.appcompat:appcompat:1.6.1")
             implementation("com.google.android.material:material:1.11.0")
             implementation("androidx.constraintlayout:constraintlayout:2.1.4")
-            implementation("androidx.camera:camera-core:1.3.1")
-            implementation("androidx.camera:camera-camera2:1.3.1")
-            implementation("androidx.camera:camera-lifecycle:1.3.1")
-            implementation("androidx.camera:camera-view:1.3.1")
+            
+            // CameraX
+            val camerax_version = "1.3.1"
+            implementation("androidx.camera:camera-core:${camerax_version}")
+            implementation("androidx.camera:camera-camera2:${camerax_version}")
+            implementation("androidx.camera:camera-lifecycle:${camerax_version}")
+            implementation("androidx.camera:camera-view:${camerax_version}")
+            
+            // ML Kit
             implementation("com.google.mlkit:barcode-scanning:17.3.0")
+            
+            // Activity KTX for Gallery/Camera results
+            implementation("androidx.activity:activity-ktx:1.8.2")
         }
+        EOF
+
+        # Tạo background thẻ CCCD gradient
+        cat << 'EOF' > app/src/main/res/drawable/bg_cccd_card.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <shape xmlns:android="http://schemas.android.com/apk/res/android">
+            <gradient android:startColor="#ffffff" android:endColor="#e0f7fa" android:angle="135"/>
+            <corners android:radius="16dp"/>
+            <stroke android:width="1dp" android:color="#b2ebf2"/>
+        </shape>
         EOF
 
         cat << 'EOF' > app/src/main/AndroidManifest.xml
@@ -81,11 +101,12 @@ jobs:
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
             <uses-permission android:name="android.permission.CAMERA" />
             <uses-feature android:name="android.hardware.camera" android:required="true" />
+            <uses-feature android:name="android.hardware.camera.autofocus" />
             <application
                 android:allowBackup="true"
-                android:label="Zalo CCCD Native"
+                android:label="CCCD Pro"
                 android:theme="@style/Theme.AppCompat.Light.NoActionBar">
-                <activity android:name=".MainActivity" android:exported="true">
+                <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="portrait">
                     <intent-filter>
                         <action android:name="android.intent.action.MAIN" />
                         <category android:name="android.intent.category.LAUNCHER" />
@@ -95,137 +116,454 @@ jobs:
         </manifest>
         EOF
 
+        # Giao diện chính (Activity Main)
         cat << 'EOF' > app/src/main/res/layout/activity_main.xml
         <?xml version="1.0" encoding="utf-8"?>
-        <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+        <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+            xmlns:app="http://schemas.android.com/apk/res-auto"
             android:layout_width="match_parent" android:layout_height="match_parent"
-            android:orientation="vertical" android:background="#f4f5f7" android:padding="20dp">
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="Zalo CCCD Native Scanner" android:textSize="22sp" android:textStyle="bold"
-                android:gravity="center" android:textColor="#333333" android:layout_marginBottom="16dp"/>
-            <androidx.camera.view.PreviewView android:id="@+id/viewFinder"
-                android:layout_width="match_parent" android:layout_height="350dp"
-                android:background="#000000" android:visibility="gone" android:layout_marginBottom="16dp"/>
-            <Button android:id="@+id/btnStartScan" android:layout_width="match_parent"
-                android:layout_height="54dp" android:text="🔍 Bắt đầu quét trực tiếp"
-                android:backgroundTint="#0068ff" android:textColor="#ffffff" android:textStyle="bold" android:textSize="16sp"/>
-            <ScrollView android:id="@+id/resultContainer" android:layout_width="match_parent"
-                android:layout_height="match_parent" android:visibility="gone" android:background="#e8f5e9" android:padding="16dp">
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
-                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                        android:text="✅ QUÉT THÀNH CÔNG (ML KIT)" android:textColor="#2e7d32" android:textStyle="bold" android:textSize="16sp" android:layout_marginBottom="10dp"/>
-                    <TextView android:id="@+id/txtResult" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="15sp" android:textColor="#333333"/>
-                    <Button android:id="@+id/btnRescan" android:layout_width="match_parent" android:layout_height="48dp"
-                        android:text="🔄 Quét thẻ tiếp theo" android:backgroundTint="#2e7d32" android:textColor="#ffffff" android:textStyle="bold" android:layout_marginTop="16dp"/>
+            android:background="#000000">
+
+            <!-- Camera Preview -->
+            <androidx.camera.view.PreviewView
+                android:id="@+id/viewFinder"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <!-- Lớp phủ (Overlay) vẽ khung Zalo -->
+            <com.example.cccdscanner.ScannerOverlayView
+                android:id="@+id/overlayView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Di chuyển mã QR vào giữa khung hình"
+                android:textColor="#ffffff"
+                android:textSize="16sp"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="100dp"
+                android:shadowColor="#000000"
+                android:shadowRadius="4" />
+
+            <!-- Khung nút chức năng dưới cùng -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom"
+                android:orientation="horizontal"
+                android:weightSum="2"
+                android:padding="20dp"
+                android:background="#80000000">
+
+                <Button
+                    android:id="@+id/btnGallery"
+                    android:layout_width="0dp"
+                    android:layout_height="60dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="10dp"
+                    android:text="🖼️ Chọn Ảnh"
+                    android:backgroundTint="#424242"
+                    android:textColor="#ffffff"
+                    android:textStyle="bold"/>
+
+                <Button
+                    android:id="@+id/btnCapture"
+                    android:layout_width="0dp"
+                    android:layout_height="60dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="10dp"
+                    android:text="📸 Chụp Quét"
+                    android:backgroundTint="#0068ff"
+                    android:textColor="#ffffff"
+                    android:textStyle="bold"/>
+            </LinearLayout>
+
+            <!-- Khung Kết Quả CCCD (Ẩn lúc đầu) -->
+            <ScrollView
+                android:id="@+id/resultLayout"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="#f4f5f7"
+                android:visibility="gone">
+                
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="20dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Thông Tin Công Dân"
+                        android:textSize="22sp"
+                        android:textStyle="bold"
+                        android:textColor="#0068ff"
+                        android:gravity="center"
+                        android:layout_marginBottom="20dp"/>
+
+                    <!-- Thẻ CCCD Ảo -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_cccd_card"
+                        android:padding="20dp"
+                        android:elevation="8dp">
+
+                        <RelativeLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="15dp">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Số CCCD"
+                                android:textSize="12sp"
+                                android:textColor="#757575"/>
+                            <TextView
+                                android:id="@+id/tvCccd"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="16dp"
+                                android:text="0790..."
+                                android:textSize="24sp"
+                                android:textStyle="bold"
+                                android:textColor="#000000"/>
+                            
+                            <!-- Bản quyền -->
+                            <LinearLayout
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_alignParentEnd="true"
+                                android:orientation="vertical"
+                                android:gravity="end">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="🛡️ Bản quyền:"
+                                    android:textSize="10sp"
+                                    android:textColor="#d32f2f"
+                                    android:textStyle="bold"/>
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="trandoconghuy@gmail.com"
+                                    android:textSize="10sp"
+                                    android:textColor="#1976d2"
+                                    android:textStyle="italic"/>
+                            </LinearLayout>
+                        </RelativeLayout>
+
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Số CMND cũ:" android:textSize="12sp" android:textColor="#757575"/>
+                        <TextView android:id="@+id/tvCmnd" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="---" android:textSize="16sp" android:textColor="#333333" android:layout_marginBottom="10dp"/>
+
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Họ và tên:" android:textSize="12sp" android:textColor="#757575"/>
+                        <TextView android:id="@+id/tvName" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="---" android:textSize="20sp" android:textStyle="bold" android:textColor="#000000" android:layout_marginBottom="10dp"/>
+
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="10dp">
+                            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Giới tính:" android:textSize="12sp" android:textColor="#757575"/>
+                                <TextView android:id="@+id/tvGender" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="---" android:textSize="16sp" android:textColor="#333333"/>
+                            </LinearLayout>
+                            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Ngày sinh:" android:textSize="12sp" android:textColor="#757575"/>
+                                <TextView android:id="@+id/tvDob" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="---" android:textSize="16sp" android:textColor="#333333"/>
+                            </LinearLayout>
+                        </LinearLayout>
+
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Nơi thường trú:" android:textSize="12sp" android:textColor="#757575"/>
+                        <TextView android:id="@+id/tvAddress" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="---" android:textSize="16sp" android:textColor="#333333"/>
+                    </LinearLayout>
+
+                    <Button
+                        android:id="@+id/btnScanAgain"
+                        android:layout_width="match_parent"
+                        android:layout_height="54dp"
+                        android:layout_marginTop="30dp"
+                        android:text="🔄 Quét mã khác"
+                        android:backgroundTint="#0068ff"
+                        android:textColor="#ffffff"
+                        android:textStyle="bold"/>
                 </LinearLayout>
             </ScrollView>
-        </LinearLayout>
+        </FrameLayout>
         EOF
 
+        # Mã nguồn Kotlin siêu mạnh
         cat << 'EOF' > app/src/main/java/com/example/cccdscanner/MainActivity.kt
         package com.example.cccdscanner
+
         import android.Manifest
+        import android.content.Context
         import android.content.pm.PackageManager
+        import android.graphics.*
         import android.media.AudioManager
         import android.media.ToneGenerator
+        import android.net.Uri
         import android.os.Bundle
+        import android.util.AttributeSet
+        import android.util.Log
         import android.view.View
         import android.widget.Button
         import android.widget.ScrollView
         import android.widget.TextView
+        import android.widget.Toast
+        import androidx.activity.result.contract.ActivityResultContracts
         import androidx.appcompat.app.AppCompatActivity
         import androidx.camera.core.*
         import androidx.camera.lifecycle.ProcessCameraProvider
         import androidx.camera.view.PreviewView
-        import androidx.core.app.ActivityCompat
         import androidx.core.content.ContextCompat
+        import com.google.mlkit.vision.barcode.BarcodeScannerOptions
         import com.google.mlkit.vision.barcode.BarcodeScanning
         import com.google.mlkit.vision.barcode.common.Barcode
         import com.google.mlkit.vision.common.InputImage
         import java.util.concurrent.ExecutorService
         import java.util.concurrent.Executors
 
+        // Lớp vẽ khung nhắm Zalo chuyên nghiệp
+        class ScannerOverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
+            private val paint = Paint()
+            private val strokePaint = Paint()
+            private var boxRect: RectF = RectF()
+
+            init {
+                paint.color = Color.parseColor("#99000000") // Đen mờ 60%
+                strokePaint.color = Color.WHITE
+                strokePaint.style = Paint.Style.STROKE
+                strokePaint.strokeWidth = 10f
+                strokePaint.strokeCap = Paint.Cap.ROUND
+            }
+
+            override fun onDraw(canvas: Canvas) {
+                super.onDraw(canvas)
+                val width = width.toFloat()
+                val height = height.toFloat()
+                val boxSize = width * 0.75f
+                val left = (width - boxSize) / 2
+                val top = (height - boxSize) / 2
+                val right = left + boxSize
+                val bottom = top + boxSize
+                boxRect.set(left, top, right, bottom)
+
+                // Vẽ nền đen mờ
+                canvas.drawRect(0f, 0f, width, top, paint)
+                canvas.drawRect(0f, bottom, width, height, paint)
+                canvas.drawRect(0f, top, left, bottom, paint)
+                canvas.drawRect(right, top, width, bottom, paint)
+
+                // Vẽ 4 góc khung nhắm (chuẩn Zalo)
+                val cornerLength = 60f
+                // Góc trên trái
+                canvas.drawLine(left, top, left + cornerLength, top, strokePaint)
+                canvas.drawLine(left, top, left, top + cornerLength, strokePaint)
+                // Góc trên phải
+                canvas.drawLine(right, top, right - cornerLength, top, strokePaint)
+                canvas.drawLine(right, top, right, top + cornerLength, strokePaint)
+                // Góc dưới trái
+                canvas.drawLine(left, bottom, left + cornerLength, bottom, strokePaint)
+                canvas.drawLine(left, bottom, left, bottom - cornerLength, strokePaint)
+                // Góc dưới phải
+                canvas.drawLine(right, bottom, right - cornerLength, bottom, strokePaint)
+                canvas.drawLine(right, bottom, right, bottom - cornerLength, strokePaint)
+            }
+        }
+
         class MainActivity : AppCompatActivity() {
             private lateinit var viewFinder: PreviewView
-            private lateinit var btnStartScan: Button
-            private lateinit var resultContainer: ScrollView
-            private lateinit var txtResult: TextView
-            private lateinit var btnRescan: Button
+            private lateinit var overlayView: ScannerOverlayView
+            private lateinit var resultLayout: ScrollView
             private lateinit var cameraExecutor: ExecutorService
             private var cameraProvider: ProcessCameraProvider? = null
-            private var isScanning = false
-            private val PERMISSION_CODE = 10
+            private var isScanning = true
+
+            // Khởi tạo ML Kit quét QR cực nhạy
+            private val scanner = BarcodeScanning.getClient(
+                BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
+            )
+
+            // Trình chọn ảnh từ thư viện
+            private val pickImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+                if (uri != null) {
+                    processImageFromUri(uri)
+                } else {
+                    isScanning = true
+                }
+            }
+
+            // Trình chụp ảnh độ phân giải cao
+            private val takePictureLauncher = registerForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
+                if (bitmap != null) {
+                    val image = InputImage.fromBitmap(bitmap, 0)
+                    processMLKitImage(image)
+                } else {
+                    isScanning = true
+                }
+            }
+
+            // Xin quyền
+            private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+                if (isGranted) startCamera() else Toast.makeText(this, "Cần quyền Camera!", Toast.LENGTH_SHORT).show()
+            }
 
             override fun onCreate(savedInstanceState: Bundle?) {
                 super.onCreate(savedInstanceState)
                 setContentView(R.layout.activity_main)
+
                 viewFinder = findViewById(R.id.viewFinder)
-                btnStartScan = findViewById(R.id.btnStartScan)
-                resultContainer = findViewById(R.id.resultContainer)
-                txtResult = findViewById(R.id.txtResult)
-                btnRescan = findViewById(R.id.btnRescan)
+                overlayView = findViewById(R.id.overlayView)
+                resultLayout = findViewById(R.id.resultLayout)
                 cameraExecutor = Executors.newSingleThreadExecutor()
 
-                btnStartScan.setOnClickListener { checkCamera() }
-                btnRescan.setOnClickListener {
-                    resultContainer.visibility = View.GONE
-                    btnStartScan.visibility = View.VISIBLE
-                    checkCamera()
+                findViewById<Button>(R.id.btnGallery).setOnClickListener {
+                    isScanning = false
+                    pickImageLauncher.launch("image/*")
                 }
-                if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                    ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), PERMISSION_CODE)
-                }
-            }
 
-            private fun checkCamera() {
+                findViewById<Button>(R.id.btnCapture).setOnClickListener {
+                    isScanning = false
+                    takePictureLauncher.launch(null)
+                }
+
+                findViewById<Button>(R.id.btnScanAgain).setOnClickListener {
+                    resultLayout.visibility = View.GONE
+                    isScanning = true
+                    startCamera()
+                }
+
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                    btnStartScan.visibility = View.GONE
-                    resultContainer.visibility = View.GONE
-                    viewFinder.visibility = View.VISIBLE
-                    startCam()
+                    startCamera()
                 } else {
-                    ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), PERMISSION_CODE)
+                    requestPermissionLauncher.launch(Manifest.permission.CAMERA)
                 }
             }
 
-            private fun startCam() {
-                isScanning = true
-                ProcessCameraProvider.getInstance(this).addListener({
-                    val provider = ProcessCameraProvider.getInstance(this).get()
-                    cameraProvider = provider
-                    val preview = Preview.Builder().build().also { it.setSurfaceProvider(viewFinder.surfaceProvider) }
-                    val scanner = BarcodeScanning.getClient()
-                    val analyzer = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build().also {
-                        it.setAnalyzer(cameraExecutor) { proxy ->
-                            val mediaImage = proxy.image
-                            if (mediaImage != null && isScanning) {
-                                scanner.process(InputImage.fromMediaImage(mediaImage, proxy.imageInfo.rotationDegrees))
-                                    .addOnSuccessListener { bars ->
-                                        for (b in bars) {
-                                            if (b.format == Barcode.FORMAT_QR_CODE && !b.rawValue.isNullOrEmpty() && isScanning) {
-                                                isScanning = false
-                                                runOnUiThread { onSuccess(b.rawValue!!) }
-                                                break
-                                            }
-                                        }
-                                    }.addOnCompleteListener { proxy.close() }
-                            } else { proxy.close() }
-                        }
+            private fun startCamera() {
+                val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+                cameraProviderFuture.addListener({
+                    cameraProvider = cameraProviderFuture.get()
+                    
+                    // Cấu hình Preview
+                    val preview = Preview.Builder().build().also {
+                        it.setSurfaceProvider(viewFinder.surfaceProvider)
                     }
+
+                    // CẤU HÌNH QUÉT XA NHẠY BÉN (Ép độ phân giải cao thay vì mặc định 480p)
+                    val analyzer = ImageAnalysis.Builder()
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        // Bắt buộc phân tích ảnh chất lượng cao để thấy mã QR ở xa
+                        .setResolutionSelector(androidx.camera.core.resolutionselector.ResolutionSelector.Builder()
+                            .setResolutionStrategy(androidx.camera.core.resolutionselector.ResolutionStrategy(android.util.Size(1280, 720), androidx.camera.core.resolutionselector.ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER))
+                            .build())
+                        .build()
+
+                    analyzer.setAnalyzer(cameraExecutor) { imageProxy ->
+                        processImageProxy(imageProxy)
+                    }
+
                     try {
-                        provider.unbindAll()
-                        provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analyzer)
-                    } catch(e: Exception){}
+                        cameraProvider?.unbindAll()
+                        cameraProvider?.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analyzer)
+                    } catch (e: Exception) {
+                        Log.e("Camera", "Lỗi mở camera", e)
+                    }
                 }, ContextCompat.getMainExecutor(this))
             }
 
-            private fun onSuccess(text: String) {
+            @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
+            private fun processImageProxy(imageProxy: ImageProxy) {
+                val mediaImage = imageProxy.image
+                if (mediaImage != null && isScanning) {
+                    val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+                    scanner.process(image)
+                        .addOnSuccessListener { barcodes ->
+                            for (barcode in barcodes) {
+                                val rawValue = barcode.rawValue
+                                if (!rawValue.isNullOrEmpty() && rawValue.contains("|")) {
+                                    isScanning = false
+                                    runOnUiThread { handleSuccess(rawValue) }
+                                    break
+                                }
+                            }
+                        }
+                        .addOnCompleteListener { imageProxy.close() }
+                } else {
+                    imageProxy.close()
+                }
+            }
+
+            private fun processImageFromUri(uri: Uri) {
+                try {
+                    val image = InputImage.fromFilePath(this, uri)
+                    processMLKitImage(image)
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Lỗi đọc ảnh", Toast.LENGTH_SHORT).show()
+                    isScanning = true
+                }
+            }
+
+            private fun processMLKitImage(image: InputImage) {
+                scanner.process(image)
+                    .addOnSuccessListener { barcodes ->
+                        if (barcodes.isEmpty()) {
+                            Toast.makeText(this, "Không tìm thấy mã QR CCCD trong ảnh!", Toast.LENGTH_LONG).show()
+                            isScanning = true
+                        } else {
+                            for (barcode in barcodes) {
+                                val rawValue = barcode.rawValue
+                                if (!rawValue.isNullOrEmpty() && rawValue.contains("|")) {
+                                    handleSuccess(rawValue)
+                                    return@addOnSuccessListener
+                                }
+                            }
+                            Toast.makeText(this, "Mã QR không đúng định dạng CCCD!", Toast.LENGTH_LONG).show()
+                            isScanning = true
+                        }
+                    }
+                    .addOnFailureListener {
+                        Toast.makeText(this, "Lỗi phân tích ảnh", Toast.LENGTH_SHORT).show()
+                        isScanning = true
+                    }
+            }
+
+            // Định dạng lại ngày sinh từ DDMMYYYY sang DD/MM/YYYY
+            private fun formatCCCDDate(dateString: String): String {
+                if (dateString.length == 8) {
+                    return "${dateString.substring(0, 2)}/${dateString.substring(2, 4)}/${dateString.substring(4, 8)}"
+                }
+                return dateString
+            }
+
+            private fun handleSuccess(text: String) {
+                // Phát tiếng Bíp
                 try { ToneGenerator(AudioManager.STREAM_ALARM, 100).startTone(ToneGenerator.TONE_PROP_BEEP, 150) } catch(e:Exception){}
+                
+                // Dừng camera
                 cameraProvider?.unbindAll()
-                viewFinder.visibility = View.GONE
-                resultContainer.visibility = View.VISIBLE
-                val p = text.split("|")
-                txtResult.text = if (p.size >= 6) "• Số CCCD: ${p[0]}\n• Họ tên: ${p[2]}\n• Ngày sinh: ${p[3]}\n• Giới tính: ${p[4]}\n• Thường trú: ${p[5]}" else text
+                
+                // Bóc tách dữ liệu
+                val parts = text.split("|")
+                if (parts.size >= 6) {
+                    findViewById<TextView>(R.id.tvCccd).text = parts[0]
+                    findViewById<TextView>(R.id.tvCmnd).text = parts[1].ifEmpty { "Không có" }
+                    findViewById<TextView>(R.id.tvName).text = parts[2]
+                    findViewById<TextView>(R.id.tvDob).text = formatCCCDDate(parts[3])
+                    findViewById<TextView>(R.id.tvGender).text = parts[4]
+                    findViewById<TextView>(R.id.tvAddress).text = parts[5]
+                } else {
+                    Toast.makeText(this, "Dữ liệu QR không đầy đủ", Toast.LENGTH_SHORT).show()
+                }
+
+                // Hiển thị UI
+                resultLayout.visibility = View.VISIBLE
+            }
+
+            override fun onDestroy() {
+                super.onDestroy()
+                cameraExecutor.shutdown()
             }
         }
         EOF
