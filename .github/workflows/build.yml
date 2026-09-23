@@ -18,7 +18,7 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Create Static Keystore (Khắc phục lỗi không cài đè)
+    - name: Create Static Keystore
       run: |
         mkdir -p app
         keytool -genkey -v -keystore app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
@@ -91,7 +91,6 @@ jobs:
         }
         EOF
 
-        # Cấu hình FileProvider cho Camera chất lượng cao và Cài đặt Update
         cat << 'EOF' > app/src/main/res/xml/file_paths.xml
         <?xml version="1.0" encoding="utf-8"?>
         <paths>
@@ -160,7 +159,6 @@ jobs:
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
 
-            <!-- Nút Update Vision ở góc phải trên -->
             <Button
                 android:id="@+id/btnUpdate"
                 android:layout_width="wrap_content"
@@ -245,7 +243,6 @@ jobs:
         import android.os.Bundle
         import android.os.Environment
         import android.util.AttributeSet
-        import android.util.Log
         import android.view.View
         import android.widget.Button
         import android.widget.ScrollView
@@ -293,12 +290,10 @@ jobs:
 
             private val scanner = BarcodeScanning.getClient(BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build())
 
-            // Sửa lỗi: Lấy ảnh độ phân giải cao từ Thư Viện
             private val pickImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
                 if (uri != null) processImageFromUri(uri) else isScanning = true
             }
 
-            // Sửa lỗi: Chụp ảnh lưu thành file độ phân giải tối đa (Không dùng Thumbnail nữa)
             private val takePictureLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
                 if (success && currentPhotoUri != null) {
                     processImageFromUri(currentPhotoUri!!)
@@ -324,7 +319,8 @@ jobs:
 
                 findViewById<Button>(R.id.btnCapture).setOnClickListener {
                     isScanning = false
-                    val photoFile = File(externalCacheDir, "scan_${System.currentTimeMillis()}.jpg")
+                    val cacheDir = externalCacheDir ?: cacheDir
+                    val photoFile = File(cacheDir, "scan_${System.currentTimeMillis()}.jpg")
                     currentPhotoUri = FileProvider.getUriForFile(this, "${packageName}.fileprovider", photoFile)
                     takePictureLauncher.launch(currentPhotoUri)
                 }
@@ -335,7 +331,6 @@ jobs:
                 }
 
                 findViewById<Button>(R.id.btnUpdate).setOnClickListener {
-                    // LƯU Ý: ĐÂY LÀ CHỖ BẠN PHẢI THAY LINK APK TĨNH CỦA BẠN (VD Google Drive trực tiếp, Firebase)
                     val updateUrl = "https://example.com/app-release.apk" 
                     downloadAndInstall(updateUrl)
                 }
@@ -346,11 +341,12 @@ jobs:
 
             private fun downloadAndInstall(url: String) {
                 if(url.contains("example.com")) {
-                    Toast.makeText(this, "Hãy thay link tải APK tĩnh vào biến updateUrl trong code", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Hãy thay link tải APK tĩnh vào biến updateUrl", Toast.LENGTH_LONG).show()
                     return
                 }
                 Toast.makeText(this, "Đang tải bản cập nhật...", Toast.LENGTH_LONG).show()
-                val oldFile = File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "update.apk")
+                val downloadDir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: filesDir
+                val oldFile = File(downloadDir, "update.apk")
                 if(oldFile.exists()) oldFile.delete()
 
                 val request = DownloadManager.Request(Uri.parse(url))
@@ -364,7 +360,8 @@ jobs:
                     override fun onReceive(context: Context, intent: Intent) {
                         val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
                         if (id == downloadId) {
-                            val file = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "update.apk")
+                            val targetDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
+                            val file = File(targetDir, "update.apk")
                             if (file.exists()) {
                                 val uri = FileProvider.getUriForFile(context, "${packageName}.fileprovider", file)
                                 val installIntent = Intent(Intent.ACTION_VIEW).apply {
