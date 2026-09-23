@@ -1,0 +1,9 @@
+.gradle/
+.idea/
+**/build/
+local.properties
+*.iml
+*.apk
+*.aab
+/Hop_Dong_Thue_Nha_Mau.pdf
+/thutuchanhchinh-main/
