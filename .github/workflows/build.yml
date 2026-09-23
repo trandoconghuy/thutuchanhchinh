@@ -1,4 +1,4 @@
-name: Build Android APK V3
+name: Build Android APK V4
 
 on:
   push:
@@ -33,7 +33,7 @@ jobs:
         cat << 'EOF' > settings.gradle.kts
         pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
         dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
-        rootProject.name = "CCCDScannerV3"
+        rootProject.name = "CCCDScannerV4"
         include(":app")
         EOF
 
@@ -56,8 +56,8 @@ jobs:
                 applicationId = "com.example.cccdscanner"
                 minSdk = 24
                 targetSdk = 34
-                versionCode = 3
-                versionName = "3.0"
+                versionCode = 4
+                versionName = "4.0"
             }
             signingConfigs {
                 create("release") {
@@ -319,8 +319,9 @@ jobs:
 
                 findViewById<Button>(R.id.btnCapture).setOnClickListener {
                     isScanning = false
-                    val cacheDir = externalCacheDir ?: cacheDir
-                    val photoFile = File(cacheDir, "scan_${System.currentTimeMillis()}.jpg")
+                    // FIX: Đổi tên biến để tránh lỗi biên dịch Kotlin
+                    val safeCacheDir = externalCacheDir ?: cacheDir
+                    val photoFile = File(safeCacheDir, "scan_${System.currentTimeMillis()}.jpg")
                     currentPhotoUri = FileProvider.getUriForFile(this, "${packageName}.fileprovider", photoFile)
                     takePictureLauncher.launch(currentPhotoUri)
                 }
@@ -373,7 +374,7 @@ jobs:
                         }
                     }
                 }
-                registerReceiver(onComplete, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE))
+                ContextCompat.registerReceiver(this, onComplete, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), ContextCompat.RECEIVER_EXPORTED)
             }
 
             private fun startCamera() {
