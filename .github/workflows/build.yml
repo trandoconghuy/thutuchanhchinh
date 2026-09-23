@@ -19,9 +19,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.4"
-      - name: Build and test
-        run: gradle clean lintDebug assembleDebug
+      - name: Build APK
+        run: gradle clean assembleDebug
+      - name: Check Android lint
+        run: gradle lintDebug
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: hop-dong-thue-nha-debug
           path: app/build/outputs/apk/debug/app-debug.apk
