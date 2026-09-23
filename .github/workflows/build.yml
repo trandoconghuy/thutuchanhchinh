@@ -21,20 +21,220 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Setup Gradle and Build
-      uses: gradle/actions/setup-gradle@v3
-      with:
-        gradle-version: '8.5'
-
-    - name: Generate Wrapper and Compile APK
+    - name: Create Project Structure and Code
       run: |
-        if [ ! -f "gradlew" ]; then
-          gradle wrapper --gradle-version 8.5
-        fi
+        mkdir -p app/src/main/java/com/example/cccdscanner
+        mkdir -p app/src/main/res/layout
+
+        cat << 'EOF' > settings.gradle.kts
+        pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+        dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
+        rootProject.name = "CCCDScanner"
+        include(":app")
+        EOF
+
+        cat << 'EOF' > build.gradle.kts
+        plugins {
+            id("com.android.application") version "8.2.0" apply false
+            id("org.jetbrains.kotlin.android") version "1.9.0" apply false
+        }
+        EOF
+
+        cat << 'EOF' > app/build.gradle.kts
+        plugins {
+            id("com.android.application")
+            id("org.jetbrains.kotlin.android")
+        }
+        android {
+            namespace = "com.example.cccdscanner"
+            compileSdk = 34
+            defaultConfig {
+                applicationId = "com.example.cccdscanner"
+                minSdk = 24
+                targetSdk = 34
+                versionCode = 1
+                versionName = "1.0"
+            }
+            compileOptions {
+                sourceCompatibility = JavaVersion.VERSION_1_8
+                targetCompatibility = JavaVersion.VERSION_1_8
+            }
+            kotlinOptions { jvmTarget = "1.8" }
+        }
+        dependencies {
+            implementation("androidx.core:core-ktx:1.12.0")
+            implementation("androidx.appcompat:appcompat:1.6.1")
+            implementation("com.google.android.material:material:1.11.0")
+            implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+            implementation("androidx.camera:camera-core:1.3.1")
+            implementation("androidx.camera:camera-camera2:1.3.1")
+            implementation("androidx.camera:camera-lifecycle:1.3.1")
+            implementation("androidx.camera:camera-view:1.3.1")
+            implementation("com.google.mlkit:barcode-scanning:17.3.0")
+        }
+        EOF
+
+        cat << 'EOF' > app/src/main/AndroidManifest.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-permission android:name="android.permission.CAMERA" />
+            <uses-feature android:name="android.hardware.camera" android:required="true" />
+            <application
+                android:allowBackup="true"
+                android:label="Zalo CCCD Native"
+                android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+                <activity android:name=".MainActivity" android:exported="true">
+                    <intent-filter>
+                        <action android:name="android.intent.action.MAIN" />
+                        <category android:name="android.intent.category.LAUNCHER" />
+                    </intent-filter>
+                </activity>
+            </application>
+        </manifest>
+        EOF
+
+        cat << 'EOF' > app/src/main/res/layout/activity_main.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+            android:layout_width="match_parent" android:layout_height="match_parent"
+            android:orientation="vertical" android:background="#f4f5f7" android:padding="20dp">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Zalo CCCD Native Scanner" android:textSize="22sp" android:textStyle="bold"
+                android:gravity="center" android:textColor="#333333" android:layout_marginBottom="16dp"/>
+            <androidx.camera.view.PreviewView android:id="@+id/viewFinder"
+                android:layout_width="match_parent" android:layout_height="350dp"
+                android:background="#000000" android:visibility="gone" android:layout_marginBottom="16dp"/>
+            <Button android:id="@+id/btnStartScan" android:layout_width="match_parent"
+                android:layout_height="54dp" android:text="🔍 Bắt đầu quét trực tiếp"
+                android:backgroundTint="#0068ff" android:textColor="#ffffff" android:textStyle="bold" android:textSize="16sp"/>
+            <ScrollView android:id="@+id/resultContainer" android:layout_width="match_parent"
+                android:layout_height="match_parent" android:visibility="gone" android:background="#e8f5e9" android:padding="16dp">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="✅ QUÉT THÀNH CÔNG (ML KIT)" android:textColor="#2e7d32" android:textStyle="bold" android:textSize="16sp" android:layout_marginBottom="10dp"/>
+                    <TextView android:id="@+id/txtResult" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="15sp" android:textColor="#333333"/>
+                    <Button android:id="@+id/btnRescan" android:layout_width="match_parent" android:layout_height="48dp"
+                        android:text="🔄 Quét thẻ tiếp theo" android:backgroundTint="#2e7d32" android:textColor="#ffffff" android:textStyle="bold" android:layout_marginTop="16dp"/>
+                </LinearLayout>
+            </ScrollView>
+        </LinearLayout>
+        EOF
+
+        cat << 'EOF' > app/src/main/java/com/example/cccdscanner/MainActivity.kt
+        package com.example.cccdscanner
+        import android.Manifest
+        import android.content.pm.PackageManager
+        import android.media.AudioManager
+        import android.media.ToneGenerator
+        import android.os.Bundle
+        import android.view.View
+        import android.widget.Button
+        import android.widget.ScrollView
+        import android.widget.TextView
+        import androidx.appcompat.app.AppCompatActivity
+        import androidx.camera.core.*
+        import androidx.camera.lifecycle.ProcessCameraProvider
+        import androidx.camera.view.PreviewView
+        import androidx.core.app.ActivityCompat
+        import androidx.core.content.ContextCompat
+        import com.google.mlkit.vision.barcode.BarcodeScanning
+        import com.google.mlkit.vision.barcode.common.Barcode
+        import com.google.mlkit.vision.common.InputImage
+        import java.util.concurrent.ExecutorService
+        import java.util.concurrent.Executors
+
+        class MainActivity : AppCompatActivity() {
+            private lateinit var viewFinder: PreviewView
+            private lateinit var btnStartScan: Button
+            private lateinit var resultContainer: ScrollView
+            private lateinit var txtResult: TextView
+            private lateinit var btnRescan: Button
+            private lateinit var cameraExecutor: ExecutorService
+            private var cameraProvider: ProcessCameraProvider? = null
+            private var isScanning = false
+            private val PERMISSION_CODE = 10
+
+            override fun onCreate(savedInstanceState: Bundle?) {
+                super.onCreate(savedInstanceState)
+                setContentView(R.layout.activity_main)
+                viewFinder = findViewById(R.id.viewFinder)
+                btnStartScan = findViewById(R.id.btnStartScan)
+                resultContainer = findViewById(R.id.resultContainer)
+                txtResult = findViewById(R.id.txtResult)
+                btnRescan = findViewById(R.id.btnRescan)
+                cameraExecutor = Executors.newSingleThreadExecutor()
+
+                btnStartScan.setOnClickListener { checkCamera() }
+                btnRescan.setOnClickListener {
+                    resultContainer.visibility = View.GONE
+                    btnStartScan.visibility = View.VISIBLE
+                    checkCamera()
+                }
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                    ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), PERMISSION_CODE)
+                }
+            }
+
+            private fun checkCamera() {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                    btnStartScan.visibility = View.GONE
+                    resultContainer.visibility = View.GONE
+                    viewFinder.visibility = View.VISIBLE
+                    startCam()
+                } else {
+                    ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), PERMISSION_CODE)
+                }
+            }
+
+            private fun startCam() {
+                isScanning = true
+                ProcessCameraProvider.getInstance(this).addListener({
+                    val provider = ProcessCameraProvider.getInstance(this).get()
+                    cameraProvider = provider
+                    val preview = Preview.Builder().build().also { it.setSurfaceProvider(viewFinder.surfaceProvider) }
+                    val scanner = BarcodeScanning.getClient()
+                    val analyzer = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build().also {
+                        it.setAnalyzer(cameraExecutor) { proxy ->
+                            val mediaImage = proxy.image
+                            if (mediaImage != null && isScanning) {
+                                scanner.process(InputImage.fromMediaImage(mediaImage, proxy.imageInfo.rotationDegrees))
+                                    .addOnSuccessListener { bars ->
+                                        for (b in bars) {
+                                            if (b.format == Barcode.FORMAT_QR_CODE && !b.rawValue.isNullOrEmpty() && isScanning) {
+                                                isScanning = false
+                                                runOnUiThread { onSuccess(b.rawValue!!) }
+                                                break
+                                            }
+                                        }
+                                    }.addOnCompleteListener { proxy.close() }
+                            } else { proxy.close() }
+                        }
+                    }
+                    try {
+                        provider.unbindAll()
+                        provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analyzer)
+                    } catch(e: Exception){}
+                }, ContextCompat.getMainExecutor(this))
+            }
+
+            private fun onSuccess(text: String) {
+                try { ToneGenerator(AudioManager.STREAM_ALARM, 100).startTone(ToneGenerator.TONE_PROP_BEEP, 150) } catch(e:Exception){}
+                cameraProvider?.unbindAll()
+                viewFinder.visibility = View.GONE
+                resultContainer.visibility = View.VISIBLE
+                val p = text.split("|")
+                txtResult.text = if (p.size >= 6) "• Số CCCD: ${p[0]}\n• Họ tên: ${p[2]}\n• Ngày sinh: ${p[3]}\n• Giới tính: ${p[4]}\n• Thường trú: ${p[5]}" else text
+            }
+        }
+        EOF
+
+    - name: Build APK
+      run: |
+        gradle wrapper --gradle-version 8.5
         chmod +x gradlew
         ./gradlew assembleDebug
 
-    - name: Upload APK Artifact
+    - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
