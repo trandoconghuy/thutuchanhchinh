@@ -1,4 +1,4 @@
-name: Build Android APK V6
+name: Build Android APK V7
 
 on:
   push:
@@ -30,7 +30,6 @@ jobs:
         mkdir -p app/src/main/res/drawable
         mkdir -p app/src/main/res/xml
 
-        # ĐÃ BỔ SUNG LẠI TỆP CẤU HÌNH BỊ THIẾU
         cat << 'EOF' > gradle.properties
         android.useAndroidX=true
         android.enableJetifier=true
@@ -40,7 +39,7 @@ jobs:
         cat << 'EOF' > settings.gradle.kts
         pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
         dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
-        rootProject.name = "CCCDScannerV6"
+        rootProject.name = "CCCDScannerV7"
         include(":app")
         EOF
 
@@ -63,8 +62,8 @@ jobs:
                 applicationId = "com.example.cccdscanner"
                 minSdk = 24
                 targetSdk = 34
-                versionCode = 6
-                versionName = "6.0"
+                versionCode = 7
+                versionName = "7.0"
             }
             signingConfigs {
                 create("release") {
@@ -298,15 +297,15 @@ jobs:
             private val scanner = BarcodeScanning.getClient(BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build())
 
             private val pickImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-                if (uri != null) processImageFromUri(uri) else isScanning = true
+                if (uri != null) processImageFromUri(uri) else { isScanning = true; startCamera() }
             }
 
             private val takePictureLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
                 if (success && currentPhotoUri != null) {
                     processImageFromUri(currentPhotoUri!!)
                 } else {
-                    Toast.makeText(this, "Hủy chụp ảnh", Toast.LENGTH_SHORT).show()
-                    isScanning = true
+                    Toast.makeText(this, "Đã hủy chụp ảnh", Toast.LENGTH_SHORT).show()
+                    isScanning = true; startCamera()
                 }
             }
 
@@ -321,11 +320,15 @@ jobs:
 
                 findViewById<Button>(R.id.btnGallery).setOnClickListener {
                     isScanning = false
+                    // GIẢI PHÓNG CAMERA NGAY LẬP TỨC ĐỂ TRÁNH LAG NÚT BẤM
+                    cameraProvider?.unbindAll() 
                     pickImageLauncher.launch("image/*")
                 }
 
                 findViewById<Button>(R.id.btnCapture).setOnClickListener {
                     isScanning = false
+                    // GIẢI PHÓNG CAMERA NGAY LẬP TỨC ĐỂ TRÁNH LAG NÚT BẤM
+                    cameraProvider?.unbindAll() 
                     val safeCacheDir = externalCacheDir ?: cacheDir
                     val photoFile = File(safeCacheDir, "scan_${System.currentTimeMillis()}.jpg")
                     currentPhotoUri = FileProvider.getUriForFile(this, "${packageName}.fileprovider", photoFile)
@@ -338,6 +341,7 @@ jobs:
                 }
 
                 findViewById<Button>(R.id.btnUpdate).setOnClickListener {
+                    // Bạn cần thay link github release thực tế của bạn vào đây
                     val updateUrl = "https://example.com/app-release.apk" 
                     downloadAndInstall(updateUrl)
                 }
@@ -348,7 +352,7 @@ jobs:
 
             private fun downloadAndInstall(url: String) {
                 if(url.contains("example.com")) {
-                    Toast.makeText(this, "Hãy thay link tải APK tĩnh vào biến updateUrl", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Nút cập nhật đang dùng link mẫu. Hãy thay bằng link APK thật của bạn trong mã nguồn!", Toast.LENGTH_LONG).show()
                     return
                 }
                 Toast.makeText(this, "Đang tải bản cập nhật...", Toast.LENGTH_LONG).show()
