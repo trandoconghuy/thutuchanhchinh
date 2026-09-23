@@ -1,4 +1,4 @@
-name: Build Android APK V10
+name: Build Android APK V11
 
 on:
   push:
@@ -40,7 +40,7 @@ jobs:
         cat << 'EOF' > settings.gradle.kts
         pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
         dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
-        rootProject.name = "CCCDScannerV10"
+        rootProject.name = "CCCDScannerV11"
         include(":app")
         EOF
 
@@ -63,8 +63,8 @@ jobs:
                 applicationId = "com.example.cccdscanner"
                 minSdk = 24
                 targetSdk = 34
-                versionCode = 10
-                versionName = "10.0 Smart"
+                versionCode = 11
+                versionName = "11.0 Smart"
             }
             compileOptions {
                 sourceCompatibility = JavaVersion.VERSION_17
@@ -163,7 +163,7 @@ jobs:
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
 
-            <!-- Nút Update Dời Xuống Góc Dưới Phải (Nho gọn, bo tròn) -->
+            <!-- Nút Update Dời Xuống Góc Dưới Phải (Nhỏ gọn, bo tròn) -->
             <Button
                 android:id="@+id/btnUpdate"
                 android:layout_width="wrap_content"
@@ -204,14 +204,12 @@ jobs:
                 <Button android:id="@+id/btnCapture" android:layout_width="0dp" android:layout_height="60dp" android:layout_weight="1" android:layout_marginStart="10dp" android:text="📸 Chụp Quét" android:backgroundTint="#0068ff" android:textColor="#ffffff" android:textStyle="bold"/>
             </LinearLayout>
 
-            <!-- Khung Kết Quả Đã Cân Đối Lại Giao Diện & Bản Quyền -->
             <ScrollView android:id="@+id/resultLayout" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#f4f5f7" android:visibility="gone">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp">
                     <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Thông Tin Căn Cước" android:textSize="22sp" android:textStyle="bold" android:textColor="#0068ff" android:gravity="center" android:layout_marginBottom="20dp"/>
                     
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/bg_cccd_card" android:padding="20dp" android:elevation="8dp">
                         
-                        <!-- Bản quyền Nổi bật góc phải -->
                         <RelativeLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="15dp">
                             <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="vertical">
                                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Số CCCD" android:textSize="12sp" android:textColor="#757575"/>
@@ -227,7 +225,6 @@ jobs:
                         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Họ và tên:" android:textSize="12sp" android:textColor="#757575"/>
                         <TextView android:id="@+id/tvName" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="---" android:textSize="20sp" android:textStyle="bold" android:textColor="#000000" android:layout_marginBottom="15dp"/>
                         
-                        <!-- Lưới Thông tin cân đối -->
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="15dp" android:weightSum="2">
                             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
                                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Giới tính:" android:textSize="12sp" android:textColor="#757575"/>
@@ -239,7 +236,6 @@ jobs:
                             </LinearLayout>
                         </LinearLayout>
 
-                        <!-- Lưới Ngày cấp và CMND cũ -->
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="15dp" android:weightSum="2">
                             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
                                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Ngày cấp:" android:textSize="12sp" android:textColor="#757575"/>
@@ -319,7 +315,10 @@ jobs:
             private lateinit var resultLayout: ScrollView
             private lateinit var cameraExecutor: ExecutorService
             private var cameraProvider: ProcessCameraProvider? = null
-            private var camera: Camera? = null
+            
+            // FIX V11: Định dạng tuyệt đối chuẩn lớp Camera của CameraX để tránh lỗi Unresolved reference với android.graphics.Camera
+            private var camera: androidx.camera.core.Camera? = null
+            
             private var isScanning = true
             private var currentPhotoUri: Uri? = null
 
@@ -348,7 +347,6 @@ jobs:
                 resultLayout = findViewById(R.id.resultLayout)
                 cameraExecutor = Executors.newSingleThreadExecutor()
 
-                // THÊM CHỨC NĂNG CHẠM ĐỂ LẤY NÉT (TOUCH TO FOCUS)
                 viewFinder.setOnTouchListener { _, event ->
                     if (event.action == MotionEvent.ACTION_DOWN) {
                         val factory = viewFinder.meteringPointFactory
@@ -384,7 +382,7 @@ jobs:
                 }
 
                 findViewById<Button>(R.id.btnUpdate).setOnClickListener {
-                    // QUAN TRỌNG: Hãy tải file APK của bạn lên một host trực tiếp (VD: Firebase, Github Release .apk) và thay link vào đây.
+                    // QUAN TRỌNG: Hãy tải file APK của bạn lên host tĩnh (VD: Firebase, Github Release) và dán link vào đây để tải trực tiếp.
                     val directApkUrl = "https://example.com/app-release.apk" 
                     downloadAndInstall(directApkUrl)
                 }
@@ -395,7 +393,7 @@ jobs:
 
             private fun downloadAndInstall(url: String) {
                 if(url.contains("example.com")) {
-                    Toast.makeText(this, "Vui lòng nhập Link APK tĩnh (Direct Link) vào mã nguồn để tải ngầm!", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Vui lòng nhập Link APK trực tiếp vào mã nguồn để tải ngầm!", Toast.LENGTH_LONG).show()
                     return
                 }
                 Toast.makeText(this, "Đang tải bản cập nhật ngầm...", Toast.LENGTH_LONG).show()
@@ -487,7 +485,6 @@ jobs:
                 }
             }
 
-            // HÀM FORMAT NGÀY THÁNG
             private fun formatDate(dateStr: String): String {
                 return if (dateStr.length == 8) "${dateStr.substring(0,2)}/${dateStr.substring(2,4)}/${dateStr.substring(4,8)}" else dateStr
             }
@@ -496,14 +493,14 @@ jobs:
                 try { ToneGenerator(AudioManager.STREAM_ALARM, 100).startTone(ToneGenerator.TONE_PROP_BEEP, 150) } catch(e:Exception){}
                 cameraProvider?.unbindAll()
                 val parts = text.split("|")
-                if (parts.size >= 7) { // Bổ sung đọc trường thứ 7 (Ngày cấp)
+                if (parts.size >= 7) { 
                     findViewById<TextView>(R.id.tvCccd).text = parts[0]
                     findViewById<TextView>(R.id.tvCmnd).text = parts[1].ifEmpty { "Không có" }
                     findViewById<TextView>(R.id.tvName).text = parts[2]
                     findViewById<TextView>(R.id.tvDob).text = formatDate(parts[3])
                     findViewById<TextView>(R.id.tvGender).text = parts[4]
                     findViewById<TextView>(R.id.tvAddress).text = parts[5]
-                    findViewById<TextView>(R.id.tvIssueDate).text = formatDate(parts[6]) // Ngày cấp
+                    findViewById<TextView>(R.id.tvIssueDate).text = formatDate(parts[6]) 
                 } else if(parts.size >= 6) {
                     findViewById<TextView>(R.id.tvCccd).text = parts[0]
                     findViewById<TextView>(R.id.tvCmnd).text = parts[1].ifEmpty { "Không có" }
