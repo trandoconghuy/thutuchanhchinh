@@ -1,4 +1,4 @@
-name: Build Android APK V4
+name: Build Android APK V5
 
 on:
   push:
@@ -33,7 +33,7 @@ jobs:
         cat << 'EOF' > settings.gradle.kts
         pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
         dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
-        rootProject.name = "CCCDScannerV4"
+        rootProject.name = "CCCDScannerV5"
         include(":app")
         EOF
 
@@ -56,8 +56,8 @@ jobs:
                 applicationId = "com.example.cccdscanner"
                 minSdk = 24
                 targetSdk = 34
-                versionCode = 4
-                versionName = "4.0"
+                versionCode = 5
+                versionName = "5.0"
             }
             signingConfigs {
                 create("release") {
@@ -319,7 +319,6 @@ jobs:
 
                 findViewById<Button>(R.id.btnCapture).setOnClickListener {
                     isScanning = false
-                    // FIX: Đổi tên biến để tránh lỗi biên dịch Kotlin
                     val safeCacheDir = externalCacheDir ?: cacheDir
                     val photoFile = File(safeCacheDir, "scan_${System.currentTimeMillis()}.jpg")
                     currentPhotoUri = FileProvider.getUriForFile(this, "${packageName}.fileprovider", photoFile)
@@ -364,7 +363,9 @@ jobs:
                             val targetDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
                             val file = File(targetDir, "update.apk")
                             if (file.exists()) {
-                                val uri = FileProvider.getUriForFile(context, "${packageName}.fileprovider", file)
+                                // CHÍNH CHỖ NÀY ĐÃ GÂY RA LỖI CHẾT NGƯỜI LÚC NÃY!
+                                // Đã sửa thành context.packageName thay vì gọi packageName trơ trọi.
+                                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
                                 val installIntent = Intent(Intent.ACTION_VIEW).apply {
                                     setDataAndType(uri, "application/vnd.android.package-archive")
                                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
@@ -455,7 +456,7 @@ jobs:
       run: |
         gradle wrapper --gradle-version 8.4
         chmod +x gradlew
-        ./gradlew assembleDebug
+        ./gradlew assembleDebug --stacktrace
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
