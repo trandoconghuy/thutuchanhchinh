@@ -1,4 +1,4 @@
-name: Build Android APK V5
+name: Build Android APK V6
 
 on:
   push:
@@ -30,10 +30,17 @@ jobs:
         mkdir -p app/src/main/res/drawable
         mkdir -p app/src/main/res/xml
 
+        # ĐÃ BỔ SUNG LẠI TỆP CẤU HÌNH BỊ THIẾU
+        cat << 'EOF' > gradle.properties
+        android.useAndroidX=true
+        android.enableJetifier=true
+        org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+        EOF
+
         cat << 'EOF' > settings.gradle.kts
         pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
         dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
-        rootProject.name = "CCCDScannerV5"
+        rootProject.name = "CCCDScannerV6"
         include(":app")
         EOF
 
@@ -56,8 +63,8 @@ jobs:
                 applicationId = "com.example.cccdscanner"
                 minSdk = 24
                 targetSdk = 34
-                versionCode = 5
-                versionName = "5.0"
+                versionCode = 6
+                versionName = "6.0"
             }
             signingConfigs {
                 create("release") {
@@ -363,8 +370,6 @@ jobs:
                             val targetDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
                             val file = File(targetDir, "update.apk")
                             if (file.exists()) {
-                                // CHÍNH CHỖ NÀY ĐÃ GÂY RA LỖI CHẾT NGƯỜI LÚC NÃY!
-                                // Đã sửa thành context.packageName thay vì gọi packageName trơ trọi.
                                 val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
                                 val installIntent = Intent(Intent.ACTION_VIEW).apply {
                                     setDataAndType(uri, "application/vnd.android.package-archive")
