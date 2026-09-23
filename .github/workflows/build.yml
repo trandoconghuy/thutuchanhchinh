@@ -1,4 +1,4 @@
-name: Build Android APK V11
+name: Build Android APK V12
 
 on:
   push:
@@ -18,13 +18,20 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Khôi phục và Lưu trữ Chữ ký (Bảo vệ Cài đè)
+    - name: Restore Keystore Cache
       uses: actions/cache@v4
       with:
         path: ~/.android/debug.keystore
         key: android-debug-keystore-v1
 
-    - name: Create Project Files
+    - name: Generate Keystore
+      run: |
+        if [ ! -f ~/.android/debug.keystore ]; then
+          mkdir -p ~/.android
+          keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+        fi
+
+    - name: Create Project Workspace
       run: |
         mkdir -p app/src/main/java/com/example/cccdscanner
         mkdir -p app/src/main/res/layout
@@ -40,7 +47,7 @@ jobs:
         cat << 'EOF' > settings.gradle.kts
         pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
         dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
-        rootProject.name = "CCCDScannerV11"
+        rootProject.name = "CCCDScannerV12"
         include(":app")
         EOF
 
@@ -63,8 +70,20 @@ jobs:
                 applicationId = "com.example.cccdscanner"
                 minSdk = 24
                 targetSdk = 34
-                versionCode = 11
-                versionName = "11.0 Smart"
+                versionCode = 12
+                versionName = "12.0 Pro"
+            }
+            signingConfigs {
+                create("debugConfig") {
+                    storeFile = file(System.getProperty("user.home") + "/.android/debug.keystore")
+                    storePassword = "android"
+                    keyAlias = "androiddebugkey"
+                    keyPassword = "android"
+                }
+            }
+            buildTypes {
+                getByName("debug") { signingConfig = signingConfigs.getByName("debugConfig") }
+                getByName("release") { signingConfig = signingConfigs.getByName("debugConfig") }
             }
             compileOptions {
                 sourceCompatibility = JavaVersion.VERSION_17
@@ -97,20 +116,13 @@ jobs:
         </paths>
         EOF
 
-        cat << 'EOF' > app/src/main/res/drawable/bg_cccd_card.xml
+        # Nền cho thẻ thông tin (CardView)
+        cat << 'EOF' > app/src/main/res/drawable/bg_card_white.xml
         <?xml version="1.0" encoding="utf-8"?>
         <shape xmlns:android="http://schemas.android.com/apk/res/android">
-            <gradient android:startColor="#ffffff" android:endColor="#e8f5e9" android:angle="135"/>
+            <solid android:color="#FFFFFF"/>
             <corners android:radius="16dp"/>
-            <stroke android:width="1dp" android:color="#c8e6c9"/>
-        </shape>
-        EOF
-
-        cat << 'EOF' > app/src/main/res/drawable/bg_btn_update.xml
-        <?xml version="1.0" encoding="utf-8"?>
-        <shape xmlns:android="http://schemas.android.com/apk/res/android">
-            <solid android:color="#D32F2F"/>
-            <corners android:radius="20dp"/>
+            <stroke android:width="1dp" android:color="#E0E0E0"/>
         </shape>
         EOF
 
@@ -124,7 +136,7 @@ jobs:
             
             <application
                 android:allowBackup="true"
-                android:label="CCCD Pro Max"
+                android:label="CCCD Scanner"
                 android:theme="@style/Theme.AppCompat.Light.NoActionBar">
                 
                 <provider
@@ -147,117 +159,196 @@ jobs:
         </manifest>
         EOF
 
+        # Thiết kế Giao diện V12
         cat << 'EOF' > app/src/main/res/layout/activity_main.xml
         <?xml version="1.0" encoding="utf-8"?>
-        <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+        <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
             android:layout_width="match_parent" android:layout_height="match_parent"
             android:background="#000000">
 
+            <!-- Lớp Camera -->
             <androidx.camera.view.PreviewView
                 android:id="@+id/viewFinder"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
 
-            <com.example.cccdscanner.ScannerOverlayView
-                android:id="@+id/overlayView"
+            <!-- Lớp vẽ hiệu ứng nhận diện QR (Zalo style) -->
+            <com.example.cccdscanner.QROverlayView
+                android:id="@+id/qrOverlayView"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
 
-            <!-- Nút Update Dời Xuống Góc Dưới Phải (Nhỏ gọn, bo tròn) -->
-            <Button
-                android:id="@+id/btnUpdate"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:layout_gravity="bottom|end"
-                android:layout_marginBottom="110dp"
-                android:layout_marginEnd="16dp"
-                android:paddingStart="15dp"
-                android:paddingEnd="15dp"
-                android:text="🔄 Cập Nhật"
-                android:textSize="12sp"
-                android:background="@drawable/bg_btn_update"
-                android:textColor="#ffffff"
-                android:elevation="10dp"/>
-
+            <!-- Tiêu đề Camera -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="QUÉT TOÀN MÀN HÌNH\nChạm để lấy nét - Tránh lóa sáng"
-                android:textAlignment="center"
-                android:textColor="#00E676"
-                android:textStyle="bold"
+                android:layout_centerHorizontal="true"
+                android:layout_marginTop="50dp"
+                android:text="Đưa mã QR vào khung hình"
+                android:textColor="#FFFFFF"
                 android:textSize="16sp"
-                android:layout_gravity="center_horizontal"
-                android:layout_marginTop="80dp"
+                android:textStyle="bold"
                 android:shadowColor="#000000"
-                android:shadowRadius="10" />
+                android:shadowRadius="5" />
 
+            <!-- Khung chứa các nút điều khiển dưới cùng -->
             <LinearLayout
+                android:id="@+id/controlLayout"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_gravity="bottom"
+                android:layout_alignParentBottom="true"
                 android:orientation="horizontal"
-                android:weightSum="2"
                 android:padding="20dp"
+                android:weightSum="2"
                 android:background="#80000000">
-                <Button android:id="@+id/btnGallery" android:layout_width="0dp" android:layout_height="60dp" android:layout_weight="1" android:layout_marginEnd="10dp" android:text="🖼️ Chọn Ảnh" android:backgroundTint="#424242" android:textColor="#ffffff" android:textStyle="bold"/>
-                <Button android:id="@+id/btnCapture" android:layout_width="0dp" android:layout_height="60dp" android:layout_weight="1" android:layout_marginStart="10dp" android:text="📸 Chụp Quét" android:backgroundTint="#0068ff" android:textColor="#ffffff" android:textStyle="bold"/>
+
+                <Button
+                    android:id="@+id/btnGallery"
+                    android:layout_width="0dp"
+                    android:layout_height="50dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="10dp"
+                    android:backgroundTint="#424242"
+                    android:text="🖼️ Chọn Ảnh"
+                    android:textColor="#FFFFFF"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnCapture"
+                    android:layout_width="0dp"
+                    android:layout_height="50dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="10dp"
+                    android:backgroundTint="#0068FF"
+                    android:text="📸 Chụp Ảnh"
+                    android:textColor="#FFFFFF"
+                    android:textStyle="bold" />
             </LinearLayout>
 
-            <ScrollView android:id="@+id/resultLayout" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#f4f5f7" android:visibility="gone">
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp">
-                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Thông Tin Căn Cước" android:textSize="22sp" android:textStyle="bold" android:textColor="#0068ff" android:gravity="center" android:layout_marginBottom="20dp"/>
-                    
-                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/bg_cccd_card" android:padding="20dp" android:elevation="8dp">
-                        
-                        <RelativeLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="15dp">
-                            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="vertical">
-                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Số CCCD" android:textSize="12sp" android:textColor="#757575"/>
-                                <TextView android:id="@+id/tvCccd" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0790..." android:textSize="24sp" android:textStyle="bold" android:textColor="#000000"/>
+            <!-- Màn hình kết quả thông tin -->
+            <ScrollView
+                android:id="@+id/resultLayout"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="#F4F5F7"
+                android:visibility="gone">
+
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:id="@+id/tvTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="20dp"
+                        android:gravity="center"
+                        android:text="Thông Tin Căn Cước"
+                        android:textColor="#0068FF"
+                        android:textSize="22sp"
+                        android:textStyle="bold" />
+
+                    <!-- CardView chứa thông tin (Tách biệt rõ ràng) -->
+                    <LinearLayout
+                        android:id="@+id/infoCard"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_below="@id/tvTitle"
+                        android:background="@drawable/bg_card_white"
+                        android:elevation="4dp"
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <RelativeLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="16dp">
+
+                            <LinearLayout
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical">
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Số CCCD" android:textColor="#757575" android:textSize="12sp" />
+                                <TextView android:id="@+id/tvCccd" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="---" android:textColor="#000000" android:textSize="24sp" android:textStyle="bold" />
                             </LinearLayout>
-                            
-                            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_alignParentEnd="true" android:orientation="vertical" android:gravity="end">
-                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🛡️ Bản quyền:" android:textSize="11sp" android:textColor="#757575" android:textStyle="bold"/>
-                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="trandoconghuy@gmail.com" android:textSize="13sp" android:textColor="#D50000" android:textStyle="bold"/>
+
+                            <LinearLayout
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_alignParentEnd="true"
+                                android:gravity="end"
+                                android:orientation="vertical">
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🛡️ Bản quyền:" android:textColor="#757575" android:textSize="11sp" android:textStyle="bold" />
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="trandoconghuy@gmail.com" android:textColor="#D32F2F" android:textSize="13sp" android:textStyle="bold" />
                             </LinearLayout>
                         </RelativeLayout>
-                        
-                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Họ và tên:" android:textSize="12sp" android:textColor="#757575"/>
-                        <TextView android:id="@+id/tvName" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="---" android:textSize="20sp" android:textStyle="bold" android:textColor="#000000" android:layout_marginBottom="15dp"/>
-                        
-                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="15dp" android:weightSum="2">
+
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Họ và tên:" android:textColor="#757575" android:textSize="12sp" />
+                        <TextView android:id="@+id/tvName" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginBottom="16dp" android:text="---" android:textColor="#000000" android:textSize="20sp" android:textStyle="bold" />
+
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="16dp" android:orientation="horizontal" android:weightSum="2">
                             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
-                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Giới tính:" android:textSize="12sp" android:textColor="#757575"/>
-                                <TextView android:id="@+id/tvGender" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="---" android:textSize="16sp" android:textColor="#333333"/>
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Giới tính:" android:textColor="#757575" android:textSize="12sp" />
+                                <TextView android:id="@+id/tvGender" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="---" android:textColor="#333333" android:textSize="16sp" />
                             </LinearLayout>
                             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
-                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Ngày sinh:" android:textSize="12sp" android:textColor="#757575"/>
-                                <TextView android:id="@+id/tvDob" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="---" android:textSize="16sp" android:textColor="#333333"/>
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Ngày sinh:" android:textColor="#757575" android:textSize="12sp" />
+                                <TextView android:id="@+id/tvDob" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="---" android:textColor="#333333" android:textSize="16sp" />
                             </LinearLayout>
                         </LinearLayout>
 
-                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="15dp" android:weightSum="2">
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="16dp" android:orientation="horizontal" android:weightSum="2">
                             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
-                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Ngày cấp:" android:textSize="12sp" android:textColor="#757575"/>
-                                <TextView android:id="@+id/tvIssueDate" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="---" android:textSize="16sp" android:textColor="#333333"/>
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Ngày cấp:" android:textColor="#757575" android:textSize="12sp" />
+                                <TextView android:id="@+id/tvIssueDate" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="---" android:textColor="#333333" android:textSize="16sp" />
                             </LinearLayout>
                             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
-                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="CMND cũ:" android:textSize="12sp" android:textColor="#757575"/>
-                                <TextView android:id="@+id/tvCmnd" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="---" android:textSize="16sp" android:textColor="#333333"/>
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="CMND cũ:" android:textColor="#757575" android:textSize="12sp" />
+                                <TextView android:id="@+id/tvCmnd" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="---" android:textColor="#333333" android:textSize="16sp" />
                             </LinearLayout>
                         </LinearLayout>
 
-                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Nơi thường trú:" android:textSize="12sp" android:textColor="#757575"/>
-                        <TextView android:id="@+id/tvAddress" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="---" android:textSize="16sp" android:textColor="#333333"/>
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Nơi thường trú:" android:textColor="#757575" android:textSize="12sp" />
+                        <TextView android:id="@+id/tvAddress" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="---" android:textColor="#333333" android:textSize="16sp" />
                     </LinearLayout>
-                    <Button android:id="@+id/btnScanAgain" android:layout_width="match_parent" android:layout_height="54dp" android:layout_marginTop="30dp" android:text="🔄 Quét mã khác" android:backgroundTint="#0068ff" android:textColor="#ffffff" android:textStyle="bold"/>
-                </LinearLayout>
+
+                    <!-- Nút Quét Lại -->
+                    <Button
+                        android:id="@+id/btnScanAgain"
+                        android:layout_width="match_parent"
+                        android:layout_height="54dp"
+                        android:layout_below="@id/infoCard"
+                        android:layout_marginTop="30dp"
+                        android:backgroundTint="#0068FF"
+                        android:text="🔄 QUÉT MÃ KHÁC"
+                        android:textColor="#FFFFFF"
+                        android:textStyle="bold" />
+
+                    <!-- Nút Cập Nhật Dời Xuống Dưới Cùng Bên Phải -->
+                    <Button
+                        android:id="@+id/btnUpdate"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:layout_below="@id/btnScanAgain"
+                        android:layout_alignParentEnd="true"
+                        android:layout_marginTop="20dp"
+                        android:backgroundTint="#D32F2F"
+                        android:paddingStart="15dp"
+                        android:paddingEnd="15dp"
+                        android:text="🔄 TẢI FILE CẬP NHẬT"
+                        android:textColor="#FFFFFF"
+                        android:textSize="12sp" />
+
+                </RelativeLayout>
             </ScrollView>
-        </FrameLayout>
+        </RelativeLayout>
         EOF
 
+        # Code Xử lý Chính (Vẽ Box QR + FileProvider an toàn)
         cat << 'EOF' > app/src/main/java/com/example/cccdscanner/MainActivity.kt
         package com.example.cccdscanner
+
         import android.Manifest
         import android.annotation.SuppressLint
         import android.app.DownloadManager
@@ -297,28 +388,48 @@ jobs:
         import java.util.concurrent.Executors
         import java.util.concurrent.TimeUnit
 
-        class ScannerOverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
-            private val strokePaint = Paint().apply { color = Color.parseColor("#00E676"); style = Paint.Style.STROKE; strokeWidth = 14f; strokeCap = Paint.Cap.ROUND }
+        // Lớp vẽ Hiệu ứng Khung Vàng bắt mã QR (Giống Zalo)
+        class QROverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
+            private val paint = Paint().apply {
+                color = Color.parseColor("#FFEB3B") // Màu vàng Neon
+                style = Paint.Style.STROKE
+                strokeWidth = 8f
+                strokeCap = Paint.Cap.ROUND
+                strokeJoin = Paint.Join.ROUND
+            }
+            private var qrBoundingBox: Rect? = null
+            private var scaleFactorX = 1f
+            private var scaleFactorY = 1f
+
+            fun setQRBox(rect: Rect?, scaleX: Float, scaleY: Float) {
+                qrBoundingBox = rect
+                scaleFactorX = scaleX
+                scaleFactorY = scaleY
+                invalidate() // Vẽ lại view
+            }
+
             override fun onDraw(canvas: Canvas) {
                 super.onDraw(canvas)
-                val w = width.toFloat(); val h = height.toFloat()
-                val pad = 60f; val c = 120f
-                canvas.drawLine(pad, pad, pad + c, pad, strokePaint); canvas.drawLine(pad, pad, pad, pad + c, strokePaint)
-                canvas.drawLine(w - pad, pad, w - pad - c, pad, strokePaint); canvas.drawLine(w - pad, pad, w - pad, pad + c, strokePaint)
-                canvas.drawLine(pad, h - pad, pad + c, h - pad, strokePaint); canvas.drawLine(pad, h - pad, pad, h - pad - c, strokePaint)
-                canvas.drawLine(w - pad, h - pad, w - pad - c, h - pad, strokePaint); canvas.drawLine(w - pad, h - pad, w - pad, h - pad - c, strokePaint)
+                qrBoundingBox?.let { box ->
+                    // Quy đổi tọa độ từ ảnh (ML Kit) sang màn hình (View)
+                    val left = box.left * scaleFactorX
+                    val top = box.top * scaleFactorY
+                    val right = box.right * scaleFactorX
+                    val bottom = box.bottom * scaleFactorY
+                    
+                    val rectF = RectF(left, top, right, bottom)
+                    canvas.drawRoundRect(rectF, 16f, 16f, paint)
+                }
             }
         }
 
         class MainActivity : AppCompatActivity() {
             private lateinit var viewFinder: PreviewView
             private lateinit var resultLayout: ScrollView
+            private lateinit var qrOverlayView: QROverlayView
             private lateinit var cameraExecutor: ExecutorService
             private var cameraProvider: ProcessCameraProvider? = null
-            
-            // FIX V11: Định dạng tuyệt đối chuẩn lớp Camera của CameraX để tránh lỗi Unresolved reference với android.graphics.Camera
             private var camera: androidx.camera.core.Camera? = null
-            
             private var isScanning = true
             private var currentPhotoUri: Uri? = null
 
@@ -332,7 +443,7 @@ jobs:
                 if (success && currentPhotoUri != null) {
                     processImageFromUri(currentPhotoUri!!)
                 } else {
-                    Toast.makeText(this, "Đã hủy chụp ảnh", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Đã hủy chụp", Toast.LENGTH_SHORT).show()
                     isScanning = true; startCamera()
                 }
             }
@@ -345,46 +456,48 @@ jobs:
                 setContentView(R.layout.activity_main)
                 viewFinder = findViewById(R.id.viewFinder)
                 resultLayout = findViewById(R.id.resultLayout)
+                qrOverlayView = findViewById(R.id.qrOverlayView)
                 cameraExecutor = Executors.newSingleThreadExecutor()
 
+                // Touch to focus
                 viewFinder.setOnTouchListener { _, event ->
                     if (event.action == MotionEvent.ACTION_DOWN) {
                         val factory = viewFinder.meteringPointFactory
                         val point = factory.createPoint(event.x, event.y)
-                        val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF)
-                            .setAutoCancelDuration(3, TimeUnit.SECONDS).build()
+                        val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF).setAutoCancelDuration(3, TimeUnit.SECONDS).build()
                         camera?.cameraControl?.startFocusAndMetering(action)
                     }
                     true
                 }
 
                 findViewById<Button>(R.id.btnGallery).setOnClickListener {
-                    isScanning = false; cameraProvider?.unbindAll() 
+                    isScanning = false; cameraProvider?.unbindAll()
                     pickImageLauncher.launch("image/*")
                 }
 
                 findViewById<Button>(R.id.btnCapture).setOnClickListener {
                     try {
-                        isScanning = false; cameraProvider?.unbindAll() 
+                        isScanning = false; cameraProvider?.unbindAll()
                         val safeCacheDir = externalCacheDir ?: cacheDir
                         val photoFile = File(safeCacheDir, "scan_${System.currentTimeMillis()}.jpg")
                         currentPhotoUri = FileProvider.getUriForFile(this, "${packageName}.fileprovider", photoFile)
                         takePictureLauncher.launch(currentPhotoUri)
                     } catch (e: Exception) {
-                        Toast.makeText(this, "Lỗi file", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "Lỗi tạo file ảnh", Toast.LENGTH_SHORT).show()
                         isScanning = true; startCamera()
                     }
                 }
 
                 findViewById<Button>(R.id.btnScanAgain).setOnClickListener {
                     resultLayout.visibility = View.GONE
+                    qrOverlayView.setQRBox(null, 1f, 1f) // Xóa khung nhắm cũ
                     isScanning = true; startCamera()
                 }
 
                 findViewById<Button>(R.id.btnUpdate).setOnClickListener {
-                    // QUAN TRỌNG: Hãy tải file APK của bạn lên host tĩnh (VD: Firebase, Github Release) và dán link vào đây để tải trực tiếp.
-                    val directApkUrl = "https://example.com/app-release.apk" 
-                    downloadAndInstall(directApkUrl)
+                    // MẪU LINK DIRECT: Thay bằng link tải APK thực tế của bạn (Google Drive Direct Link, Firebase Storage, v.v...)
+                    val updateUrl = "https://github.com/trandoconghuy/thutuchanhchinh/releases/latest/download/app-debug.apk"
+                    downloadAndInstall(updateUrl)
                 }
 
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startCamera()
@@ -392,11 +505,7 @@ jobs:
             }
 
             private fun downloadAndInstall(url: String) {
-                if(url.contains("example.com")) {
-                    Toast.makeText(this, "Vui lòng nhập Link APK trực tiếp vào mã nguồn để tải ngầm!", Toast.LENGTH_LONG).show()
-                    return
-                }
-                Toast.makeText(this, "Đang tải bản cập nhật ngầm...", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Đang tải bản cập nhật...", Toast.LENGTH_LONG).show()
                 val downloadDir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: filesDir
                 val oldFile = File(downloadDir, "update.apk")
                 if(oldFile.exists()) oldFile.delete()
@@ -440,12 +549,27 @@ jobs:
                     analyzer.setAnalyzer(cameraExecutor) { proxy ->
                         val mediaImage = proxy.image
                         if (mediaImage != null && isScanning) {
+                            val imageWidth = proxy.width.toFloat()
+                            val imageHeight = proxy.height.toFloat()
+                            
                             val image = InputImage.fromMediaImage(mediaImage, proxy.imageInfo.rotationDegrees)
                             scanner.process(image).addOnSuccessListener { bars ->
                                 for (b in bars) {
                                     if (!b.rawValue.isNullOrEmpty() && b.rawValue!!.contains("|")) {
                                         isScanning = false
-                                        runOnUiThread { handleSuccess(b.rawValue!!) }
+                                        
+                                        // VẼ HIỆU ỨNG NHẬN DIỆN (Bắt hộp bounding box)
+                                        val box = b.boundingBox
+                                        // Tính tỉ lệ giữa ảnh phân tích và kích thước View (lưu ý ảnh có thể bị xoay 90 độ)
+                                        val isPortrait = proxy.imageInfo.rotationDegrees == 90 || proxy.imageInfo.rotationDegrees == 270
+                                        val scaleX = viewFinder.width / if (isPortrait) imageHeight else imageWidth
+                                        val scaleY = viewFinder.height / if (isPortrait) imageWidth else imageHeight
+                                        
+                                        runOnUiThread { 
+                                            qrOverlayView.setQRBox(box, scaleX, scaleY)
+                                            // Đợi 300ms cho đẹp rồi chuyển màn hình
+                                            viewFinder.postDelayed({ handleSuccess(b.rawValue!!) }, 300)
+                                        }
                                         break
                                     }
                                 }
@@ -477,7 +601,7 @@ jobs:
                                     runOnUiThread { Toast.makeText(this@MainActivity, "QR sai chuẩn", Toast.LENGTH_SHORT).show(); isScanning = true; startCamera() }
                                 }
                             }.addOnFailureListener {
-                                runOnUiThread { Toast.makeText(this@MainActivity, "Lỗi phân tích AI", Toast.LENGTH_SHORT).show(); isScanning = true; startCamera() }
+                                runOnUiThread { Toast.makeText(this@MainActivity, "Lỗi AI", Toast.LENGTH_SHORT).show(); isScanning = true; startCamera() }
                             }
                     } catch (e: Exception) {
                         runOnUiThread { Toast.makeText(this@MainActivity, "Lỗi đọc file", Toast.LENGTH_SHORT).show(); isScanning = true; startCamera() }
