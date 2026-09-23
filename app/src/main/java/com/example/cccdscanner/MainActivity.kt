@@ -2,6 +2,7 @@ package com.example.cccdscanner
 
 import android.Manifest
 import android.app.Dialog
+import android.content.ContentValues
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -11,14 +12,21 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.media.MediaScannerConnection
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
+import android.util.Size
+import android.provider.MediaStore
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.Window
-import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
@@ -31,7 +39,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.Camera
 import androidx.camera.core.ExperimentalGetImage
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
@@ -42,6 +52,7 @@ import androidx.core.content.FileProvider
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import java.io.File
@@ -49,6 +60,8 @@ import java.io.FileOutputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.Locale
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
 
 class MainActivity : AppCompatActivity() {
@@ -80,6 +93,15 @@ class MainActivity : AppCompatActivity() {
     private var landlordSignature: Bitmap? = null
     private var scannerDialog: Dialog? = null
     private var cameraProvider: ProcessCameraProvider? = null
+    private var boundCamera: Camera? = null
+    private var scannerOverlay: QrScannerOverlayView? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val frameInFlight = AtomicBoolean(false)
+    private val barcodeScanner by lazy {
+        BarcodeScanning.getClient(
+            BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
+        )
+    }
     private var pendingGalleryScan = false
     private var identityResultVisible = false
 
@@ -95,7 +117,7 @@ class MainActivity : AppCompatActivity() {
             toast("Không thể đọc ảnh đã chọn")
             return@registerForActivityResult
         }
-        BarcodeScanning.getClient().process(image)
+        barcodeScanner.process(image)
             .addOnSuccessListener { codes ->
                 val raw = codes.firstOrNull { it.format == Barcode.FORMAT_QR_CODE }?.rawValue
                 if (raw.isNullOrBlank()) toast("Ảnh không có mã QR CCCD hợp lệ") else acceptQr(raw)
@@ -110,7 +132,7 @@ class MainActivity : AppCompatActivity() {
         tenantStore = TenantStore(this)
         cameraExecutor = Executors.newSingleThreadExecutor()
         buildShell()
-        showForm()
+        showScanHome()
     }
 
     private fun buildShell() {
@@ -183,6 +205,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showForm() {
         showAppChrome()
+        fields.clear()
         val scroll = ScrollView(this).apply { isFillViewport = true; clipToPadding = false }
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -197,22 +220,34 @@ class MainActivity : AppCompatActivity() {
         sectionTitle(body, "Bên cho thuê (Bên A)", "Thông tin chủ sở hữu nhà")
         personFields(body, "landlord", contract.landlord, false)
 
-        sectionTitle(body, "Bên thuê (Bên B)", "Quét CCCD hoặc chọn hồ sơ đã lưu")
-        body.addView(buildScanPanel())
-        body.addView(buildLibraryPanel())
+        sectionTitle(body, "Bên thuê (Bên B)", "Thông tin người đại diện thuê nhà")
         personFields(body, "tenant", contract.tenant, true)
-        val saveTenant = actionButton("Lưu người thuê vào thư viện", green) {
-            collectForm()
-            if (tenantStore.save(contract.tenant)) toast("Đã lưu hồ sơ người thuê")
-            else toast("Vui lòng nhập họ tên và số CCCD")
-        }
-        body.addView(saveTenant, margins(dp(44), top = 12, bottom = 18))
 
         sectionTitle(body, "Nội dung thỏa thuận", "Thông tin được đưa trực tiếp vào bản hợp đồng")
         field(body, "area", "Diện tích (m²)", contract.area)
         field(body, "duration", "Thời hạn", contract.duration)
         field(body, "monthlyRent", "Giá thuê/tháng", contract.monthlyRent)
+        val saveTenant = actionButton("Lưu người thuê vào thư viện", green) {
+            collectForm()
+            if (tenantStore.save(contract.tenant)) toast("Đã lưu hồ sơ người thuê")
+            else toast("Vui lòng nhập họ tên và số CCCD")
+        }
+        body.addView(saveTenant, margins(dp(48), top = 18, bottom = 18))
         swapContent(scroll)
+    }
+
+    private fun showScanHome() {
+        identityResultVisible = false
+        topBar.visibility = View.GONE
+        bottomNavigation.visibility = View.GONE
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(24), dp(12), dp(24))
+        }
+        page.addView(buildScanPanel(), margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 14))
+        page.addView(buildLibraryPanel(), margins(ViewGroup.LayoutParams.WRAP_CONTENT))
+        swapContent(page)
     }
 
     private fun buildScanPanel(): View {
@@ -305,7 +340,8 @@ class MainActivity : AppCompatActivity() {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(9), dp(10), dp(9), dp(90))
+            setPadding(dp(12), dp(12), dp(12), dp(94))
+            setBackgroundColor(Color.rgb(226, 232, 242))
         }
         val hint = label("Chạm trực tiếp vào nội dung hợp đồng để quay lại chỉnh sửa.", 13f, blue, true).apply {
             gravity = Gravity.CENTER
@@ -316,7 +352,8 @@ class MainActivity : AppCompatActivity() {
         val image = ImageView(this).apply {
             adjustViewBounds = true
             scaleType = ImageView.ScaleType.FIT_CENTER
-            setImageBitmap(ContractRenderer.renderBitmap(contract, tenantSignature, landlordSignature))
+            setPadding(dp(5), dp(5), dp(5), dp(5))
+            setImageBitmap(ContractRenderer.renderBitmap(contract, tenantSignature, landlordSignature, 3))
             background = rounded(Color.WHITE, 2f, Color.rgb(218, 224, 234))
             elevation = dp(6).toFloat()
             contentDescription = "Bản xem trước hợp đồng thuê nhà"
@@ -374,7 +411,8 @@ class MainActivity : AppCompatActivity() {
                 setDataAndType(uri, "application/pdf")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             })
-            toast("Đã tạo ${file.name}")
+            publishToDownloads(file, "application/pdf")
+            toast("Đã tạo PDF khổ A4 trong thư mục Tải xuống")
         }.onFailure {
             if (it is ActivityNotFoundException) toast("Đã tạo PDF nhưng thiết bị chưa có ứng dụng đọc PDF")
             else toast("Không thể tạo PDF: ${it.message ?: "lỗi không xác định"}")
@@ -401,11 +439,33 @@ class MainActivity : AppCompatActivity() {
             check(directory.exists() || directory.mkdirs()) { "Không thể tạo thư mục ảnh" }
             val file = File(directory, "Hop_Dong_${safeFileStamp()}.png")
             FileOutputStream(file).use { out ->
-                ContractRenderer.renderBitmap(contract, tenantSignature, landlordSignature, 3).compress(Bitmap.CompressFormat.PNG, 100, out)
+                ContractRenderer.renderA4PrintBitmap(contract, tenantSignature, landlordSignature).compress(Bitmap.CompressFormat.PNG, 100, out)
             }
             MediaScannerConnection.scanFile(this, arrayOf(file.absolutePath), arrayOf("image/png"), null)
-            toast("Đã lưu ảnh hợp đồng: ${file.name}")
+            publishToDownloads(file, "image/png")
+            toast("Đã lưu ảnh A4 300 DPI trong thư mục Tải xuống")
         }.onFailure { toast("Không thể lưu ảnh: ${it.message ?: "lỗi không xác định"}") }
+    }
+
+    private fun publishToDownloads(source: File, mimeType: String) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, source.name)
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/HopDong")
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        val target = contentResolver.insert(collection, values) ?: return
+        try {
+            contentResolver.openOutputStream(target)?.use { output -> source.inputStream().use { it.copyTo(output) } }
+            values.clear()
+            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+            contentResolver.update(target, values, null, null)
+        } catch (error: Exception) {
+            contentResolver.delete(target, null, null)
+            throw error
+        }
     }
 
     private fun showTenantLibrary() {
@@ -419,7 +479,8 @@ class MainActivity : AppCompatActivity() {
             .setTitle("Thư viện người thuê")
             .setItems(labels) { _, which ->
                 contract.tenant = tenants[which].copy()
-                fillTenantFields(contract.tenant)
+                fields.clear()
+                showForm()
                 toast("Đã chọn ${contract.tenant.name}")
             }
             .setNeutralButton("Xóa hồ sơ") { _, _ -> showDeleteTenant(tenants) }
@@ -446,22 +507,45 @@ class MainActivity : AppCompatActivity() {
 
     private fun showCameraScanner() {
         val dialog = Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
-        val root = FrameLayout(this)
-        val previewView = PreviewView(this).apply { scaleType = PreviewView.ScaleType.FILL_CENTER }
+        val root = FrameLayout(this).apply { setBackgroundColor(Color.rgb(5, 12, 26)) }
+        val previewView = PreviewView(this).apply {
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+            implementationMode = PreviewView.ImplementationMode.PERFORMANCE
+            setOnTouchListener { _, event ->
+                if (event.action == MotionEvent.ACTION_DOWN) focusAt(previewView, event.x, event.y)
+                true
+            }
+        }
         root.addView(previewView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        scannerOverlay = QrScannerOverlayView(this)
+        root.addView(scannerOverlay, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         val overlay = TextView(this).apply {
-            text = "Đưa mã QR trên CCCD vào giữa khung\nDữ liệu chỉ được xử lý trên thiết bị"
+            text = "Đang tự tìm và lấy nét mã QR\nGiữ CCCD ổn định trong vùng quét"
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            textSize = 15f
+            textSize = 14f
             setPadding(dp(20), dp(16), dp(20), dp(16))
             background = GradientDrawable().apply { setColor(Color.argb(185, 9, 22, 45)); cornerRadius = dp(15).toFloat() }
         }
         root.addView(overlay, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP).apply { setMargins(dp(18), dp(42), dp(18), 0) })
-        val close = iconButton("×", "Đóng camera", red) { dialog.dismiss() }
-        root.addView(close, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(36) })
+        val controls = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL }
+        controls.addView(actionButton("Ảnh QR", Color.argb(210, 29, 43, 67)) { dialog.dismiss(); pickQrImage.launch("image/*") }, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginEnd = dp(6) })
+        controls.addView(actionButton("Bật đèn", Color.argb(210, 29, 43, 67)) {
+            val camera = boundCamera
+            val enable = camera?.cameraInfo?.torchState?.value != 1
+            camera?.cameraControl?.enableTorch(enable)
+        }, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginStart = dp(6); marginEnd = dp(6) })
+        controls.addView(actionButton("Đóng", red) { dialog.dismiss() }, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginStart = dp(6) })
+        root.addView(controls, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(58), Gravity.BOTTOM).apply { setMargins(dp(18), 0, dp(18), dp(30)) })
         dialog.setContentView(root)
-        dialog.setOnDismissListener { cameraProvider?.unbindAll(); scannerDialog = null }
+        dialog.setOnDismissListener {
+            mainHandler.removeCallbacksAndMessages(null)
+            cameraProvider?.unbindAll()
+            boundCamera = null
+            scannerOverlay = null
+            frameInFlight.set(false)
+            scannerDialog = null
+        }
         dialog.show()
         scannerDialog = dialog
         bindCamera(previewView)
@@ -472,33 +556,80 @@ class MainActivity : AppCompatActivity() {
         future.addListener({
             cameraProvider = future.get()
             val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
-            val analyzer = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
+            val analyzer = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setTargetResolution(Size(1280, 720))
+                .build()
             var accepted = false
             analyzer.setAnalyzer(cameraExecutor) { proxy ->
                 if (accepted) { proxy.close(); return@setAnalyzer }
-                scanProxy(proxy) { raw ->
+                scanProxy(proxy, previewView) { raw ->
                     if (!accepted) {
                         accepted = true
-                        runOnUiThread { scannerDialog?.dismiss(); acceptQr(raw) }
+                        runOnUiThread {
+                            scannerOverlay?.showSuccess()
+                            previewView.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                            runCatching { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 70).startTone(ToneGenerator.TONE_PROP_ACK, 120) }
+                            mainHandler.postDelayed({ scannerDialog?.dismiss(); acceptQr(raw) }, 260)
+                        }
                     }
                 }
             }
             runCatching {
                 cameraProvider?.unbindAll()
-                cameraProvider?.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analyzer)
+                boundCamera = cameraProvider?.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analyzer)
+                previewView.postDelayed({ focusAt(previewView, previewView.width / 2f, previewView.height / 2f) }, 350)
+                scheduleContinuousFocus(previewView)
             }.onFailure { toast("Không thể khởi động camera") }
         }, ContextCompat.getMainExecutor(this))
     }
 
     @ExperimentalGetImage
-    private fun scanProxy(proxy: ImageProxy, onFound: (String) -> Unit) {
+    private fun scanProxy(proxy: ImageProxy, previewView: PreviewView, onFound: (String) -> Unit) {
+        if (!frameInFlight.compareAndSet(false, true)) { proxy.close(); return }
         val media = proxy.image
-        if (media == null) { proxy.close(); return }
+        if (media == null) { frameInFlight.set(false); proxy.close(); return }
         val image = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees)
-        BarcodeScanning.getClient().process(image)
+        barcodeScanner.process(image)
             .addOnSuccessListener { codes ->
-                codes.firstOrNull { it.format == Barcode.FORMAT_QR_CODE && !it.rawValue.isNullOrBlank() }?.rawValue?.let(onFound)
-            }.addOnCompleteListener { proxy.close() }
+                val qr = codes.firstOrNull { it.format == Barcode.FORMAT_QR_CODE }
+                qr?.boundingBox?.let { box ->
+                    runOnUiThread {
+                        scannerOverlay?.track(box, image.width, image.height, proxy.imageInfo.rotationDegrees)
+                        autoZoomFor(box.width(), box.height(), image.width, image.height)
+                    }
+                }
+                qr?.rawValue?.takeIf { it.isNotBlank() && it.count { char -> char == '|' } >= 5 }?.let(onFound)
+            }
+            .addOnFailureListener { scannerOverlay?.showSearching() }
+            .addOnCompleteListener { frameInFlight.set(false); proxy.close() }
+    }
+
+    private fun focusAt(previewView: PreviewView, x: Float, y: Float) {
+        val point = previewView.meteringPointFactory.createPoint(x, y)
+        val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
+            .setAutoCancelDuration(3, TimeUnit.SECONDS)
+            .build()
+        boundCamera?.cameraControl?.startFocusAndMetering(action)
+        scannerOverlay?.pulseFocus(x, y)
+    }
+
+    private fun scheduleContinuousFocus(previewView: PreviewView) {
+        if (scannerDialog == null) return
+        mainHandler.postDelayed({
+            if (scannerDialog != null && previewView.width > 0) {
+                focusAt(previewView, previewView.width / 2f, previewView.height / 2f)
+                scheduleContinuousFocus(previewView)
+            }
+        }, 2200)
+    }
+
+    private fun autoZoomFor(boxWidth: Int, boxHeight: Int, imageWidth: Int, imageHeight: Int) {
+        val coverage = maxOf(boxWidth.toFloat() / imageWidth, boxHeight.toFloat() / imageHeight)
+        if (coverage <= 0f || coverage >= .32f) return
+        val state = boundCamera?.cameraInfo?.zoomState?.value ?: return
+        val desired = (state.zoomRatio * (.32f / coverage)).coerceIn(state.minZoomRatio, minOf(state.maxZoomRatio, 3.2f))
+        if (desired > state.zoomRatio * 1.08f) boundCamera?.cameraControl?.setZoomRatio(desired)
     }
 
     private fun acceptQr(raw: String) {
@@ -644,16 +775,6 @@ class MainActivity : AppCompatActivity() {
         identityResultVisible = false
         topBar.visibility = View.VISIBLE
         bottomNavigation.visibility = View.VISIBLE
-    }
-
-    private fun fillTenantFields(person: PersonData) {
-        fields["tenant.name"]?.setText(person.name)
-        fields["tenant.birthDate"]?.setText(person.birthDate)
-        fields["tenant.citizenId"]?.setText(person.citizenId)
-        fields["tenant.issueDate"]?.setText(person.issueDate)
-        fields["tenant.issuePlace"]?.setText(person.issuePlace)
-        fields["tenant.permanentAddress"]?.setText(person.permanentAddress)
-        fields["tenant.currentAddress"]?.setText(person.currentAddress)
     }
 
     private fun formatQrDate(value: String): String = if (value.length == 8 && value.all(Char::isDigit))

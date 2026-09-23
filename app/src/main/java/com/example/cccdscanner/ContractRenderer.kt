@@ -13,8 +13,11 @@ import java.io.File
 import java.io.FileOutputStream
 
 object ContractRenderer {
+    // Khổ A4 chuẩn ISO 216 ở 72 dpi (210 × 297 mm).
     const val PAGE_WIDTH = 595
     const val PAGE_HEIGHT = 842
+    const val A4_PRINT_WIDTH = 2480
+    const val A4_PRINT_HEIGHT = 3508
 
     fun renderBitmap(
         contract: ContractData,
@@ -25,6 +28,18 @@ object ContractRenderer {
         val bitmap = Bitmap.createBitmap(PAGE_WIDTH * multiplier, PAGE_HEIGHT * multiplier, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         canvas.scale(multiplier.toFloat(), multiplier.toFloat())
+        draw(canvas, contract, tenantSignature, landlordSignature)
+        return bitmap
+    }
+
+    fun renderA4PrintBitmap(
+        contract: ContractData,
+        tenantSignature: Bitmap?,
+        landlordSignature: Bitmap?
+    ): Bitmap {
+        val bitmap = Bitmap.createBitmap(A4_PRINT_WIDTH, A4_PRINT_HEIGHT, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.scale(A4_PRINT_WIDTH / PAGE_WIDTH.toFloat(), A4_PRINT_HEIGHT / PAGE_HEIGHT.toFloat())
         draw(canvas, contract, tenantSignature, landlordSignature)
         return bitmap
     }
@@ -54,30 +69,30 @@ object ContractRenderer {
         landlordSignature: Bitmap?
     ) {
         canvas.drawColor(Color.WHITE)
-        val regular = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.BLACK; textSize = 8.3f; typeface = Typeface.create(Typeface.SERIF, Typeface.NORMAL)
+        val regular = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
+            color = Color.rgb(22, 22, 24); textSize = 9.15f; typeface = Typeface.create(Typeface.SERIF, Typeface.NORMAL)
         }
         val bold = Paint(regular).apply { typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD) }
         val italic = Paint(regular).apply { typeface = Typeface.create(Typeface.SERIF, Typeface.ITALIC) }
-        val title = Paint(bold).apply { textSize = 12.5f }
-        val heading = Paint(bold).apply { textSize = 9.2f }
-        val small = Paint(regular).apply { textSize = 7.4f }
-        val margin = 48f
+        val title = Paint(bold).apply { textSize = 14.2f }
+        val heading = Paint(bold).apply { textSize = 9.7f }
+        val small = Paint(regular).apply { textSize = 7.2f }
+        val margin = 51f
         val contentWidth = PAGE_WIDTH - margin * 2
 
-        centerText(canvas, "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", bold, 45f)
-        centerText(canvas, "Độc lập - Tự do - Hạnh phúc", bold, 57f)
-        canvas.drawLine(242f, 61f, 353f, 61f, regular)
-        centerText(canvas, "HỢP ĐỒNG THUÊ NHÀ", title, 86f)
+        centerText(canvas, "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", Paint(bold).apply { textSize = 9.5f }, 43f)
+        centerText(canvas, "Độc lập - Tự do - Hạnh phúc", Paint(bold).apply { textSize = 9.2f }, 56f)
+        canvas.drawLine(239f, 62f, 356f, 62f, regular)
+        centerText(canvas, "HỢP ĐỒNG THUÊ NHÀ", title, 88f)
 
-        var y = 108f
-        y = paragraph(canvas, "Hôm nay, vào lúc ${contract.time}, ngày ${contract.date}, tại địa chỉ: ${contract.place}", margin, y, contentWidth, regular, 11f)
-        y = text(canvas, "Chúng tôi gồm có:", margin, y + 1f, regular, 11f)
-        y = text(canvas, "BÊN CHO THUÊ NHÀ (BÊN A):", margin, y + 1f, heading, 12f)
+        var y = 111f
+        y = paragraph(canvas, "Hôm nay, vào lúc ${contract.time}, ngày ${contract.date}, tại địa chỉ: ${contract.place}", margin, y, contentWidth, regular, 12f)
+        y = text(canvas, "Chúng tôi gồm có:", margin, y + 1f, regular, 12f)
+        y = text(canvas, "BÊN CHO THUÊ NHÀ (BÊN A):", margin, y + 1f, heading, 12.5f)
         y = personBlock(canvas, contract.landlord, margin + 8f, y, contentWidth - 8f, regular)
-        y = text(canvas, "BÊN THUÊ NHÀ (BÊN B - ĐẠI DIỆN THUÊ):", margin, y + 1f, heading, 12f)
+        y = text(canvas, "BÊN THUÊ NHÀ (BÊN B - ĐẠI DIỆN THUÊ):", margin, y + 1f, heading, 12.5f)
         y = personBlock(canvas, contract.tenant, margin + 8f, y, contentWidth - 8f, regular)
-        y = paragraph(canvas, "Hai bên tự nguyện thỏa thuận và thống nhất ký kết hợp đồng thuê nhà với các điều khoản sau:", margin, y + 2f, contentWidth, italic.apply { typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD_ITALIC) }, 11f)
+        y = paragraph(canvas, "Hai bên tự nguyện thỏa thuận và thống nhất ký kết hợp đồng thuê nhà với các điều khoản sau:", margin, y + 2f, contentWidth, italic.apply { typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD_ITALIC) }, 12f)
 
         val clauses = listOf(
             "1. Bên A đồng ý cho Bên B thuê một phần diện tích nhà tại địa chỉ: ${contract.place}",
@@ -89,11 +104,11 @@ object ContractRenderer {
         )
         clauses.forEach { clause ->
             val clausePaint = if (clause.startsWith("6.")) regular else Paint(regular).apply { typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD) }
-            y = paragraph(canvas, clause, margin, y, contentWidth, clausePaint, 10.8f)
+            y = paragraph(canvas, clause, margin, y, contentWidth, clausePaint, 11.7f)
         }
-        y = paragraph(canvas, "Biên bản này được lập thành 02 bản có giá trị pháp lý như nhau, mỗi bên giữ 01 bản.", margin, y + 3f, contentWidth, regular, 11f)
+        y = paragraph(canvas, "Biên bản này được lập thành 02 bản có giá trị pháp lý như nhau, mỗi bên giữ 01 bản.", margin, y + 4f, contentWidth, regular, 12f)
 
-        val signTop = maxOf(y + 18f, 606f)
+        val signTop = maxOf(y + 20f, 605f)
         val leftCenter = 174f
         val rightCenter = 421f
         centerTextAt(canvas, "BÊN THUÊ NHÀ (Bên B)", heading, leftCenter, signTop)
@@ -119,7 +134,7 @@ object ContractRenderer {
             "- Hộ khẩu thường trú: ${person.permanentAddress}",
             "- Là chủ sở hữu hợp pháp nhà ở tại địa chỉ: ${person.currentAddress.ifBlank { person.permanentAddress }}"
         )
-        rows.forEach { y = paragraph(canvas, it, x, y, width, paint, 10.4f) }
+        rows.forEach { y = paragraph(canvas, it, x, y, width, paint, 11.4f) }
         return y
     }
 
