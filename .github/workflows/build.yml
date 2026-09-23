@@ -21,20 +21,18 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Install Android SDK Platform 34 and Build-Tools
-      run: |
-        echo "y" | sdkmanager "platforms;android-34" "build-tools;34.0.0"
-
-    - name: Setup Gradle
+    - name: Setup Gradle and Build
       uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: '8.5'
 
-    - name: Generate Gradle Wrapper
+    - name: Generate Wrapper and Compile APK
       run: |
-        gradle wrapper --gradle-version 8.5
+        if [ ! -f "gradlew" ]; then
+          gradle wrapper --gradle-version 8.5
+        fi
         chmod +x gradlew
-
-    - name: Build Debug APK
-      run: ./gradlew assembleDebug
+        ./gradlew assembleDebug
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
