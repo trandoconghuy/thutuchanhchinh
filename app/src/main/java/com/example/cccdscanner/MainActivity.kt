@@ -472,7 +472,7 @@ class MainActivity : AppCompatActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
-    @OptIn(ExperimentalGetImage::class)
+    @ExperimentalGetImage
     private fun scanProxy(proxy: ImageProxy, onFound: (String) -> Unit) {
         val media = proxy.image
         if (media == null) { proxy.close(); return }
