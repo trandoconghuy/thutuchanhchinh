@@ -19,9 +19,7 @@ jobs:
         java-version: '17'
 
     - name: Setup Android SDK
-      uses: android-actions/setup-android@v4
-      with:
-        packages: 'platforms;android-34 build-tools;34.0.0 platform-tools'
+      uses: android-actions/setup-android@v3
 
     - name: Create Project Files
       run: |
@@ -231,7 +229,6 @@ jobs:
         EOF
 
     - name: Setup Gradle
-     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
       with:
         cache-disabled: true
