@@ -353,7 +353,7 @@ class MainActivity : AppCompatActivity() {
             adjustViewBounds = true
             scaleType = ImageView.ScaleType.FIT_CENTER
             setPadding(dp(5), dp(5), dp(5), dp(5))
-            setImageBitmap(ContractRenderer.renderBitmap(contract, tenantSignature, landlordSignature, 3))
+            setImageBitmap(ContractRenderer.renderBitmap(this@MainActivity, contract, tenantSignature, landlordSignature, 3))
             background = rounded(Color.WHITE, 2f, Color.rgb(218, 224, 234))
             elevation = dp(6).toFloat()
             contentDescription = "Bản xem trước hợp đồng thuê nhà"
@@ -437,13 +437,16 @@ class MainActivity : AppCompatActivity() {
         runCatching {
             val directory = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: filesDir, "HopDong")
             check(directory.exists() || directory.mkdirs()) { "Không thể tạo thư mục ảnh" }
-            val file = File(directory, "Hop_Dong_${safeFileStamp()}.png")
-            FileOutputStream(file).use { out ->
-                ContractRenderer.renderA4PrintBitmap(contract, tenantSignature, landlordSignature).compress(Bitmap.CompressFormat.PNG, 100, out)
+            val stamp = safeFileStamp()
+            for (pageNumber in 1..ContractRenderer.PAGE_COUNT) {
+                val file = File(directory, "Hop_Dong_${stamp}_Trang_$pageNumber.png")
+                val bitmap = ContractRenderer.renderA4PrintBitmap(this, pageNumber, contract, tenantSignature, landlordSignature)
+                FileOutputStream(file).use { out -> bitmap.compress(Bitmap.CompressFormat.PNG, 100, out) }
+                bitmap.recycle()
+                MediaScannerConnection.scanFile(this, arrayOf(file.absolutePath), arrayOf("image/png"), null)
+                publishToDownloads(file, "image/png")
             }
-            MediaScannerConnection.scanFile(this, arrayOf(file.absolutePath), arrayOf("image/png"), null)
-            publishToDownloads(file, "image/png")
-            toast("Đã lưu ảnh A4 300 DPI trong thư mục Tải xuống")
+            toast("Đã lưu 02 ảnh A4 300 DPI trong thư mục Tải xuống")
         }.onFailure { toast("Không thể lưu ảnh: ${it.message ?: "lỗi không xác định"}") }
     }
 

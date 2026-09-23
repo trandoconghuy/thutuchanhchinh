@@ -34,16 +34,16 @@ data class PersonData(
 data class ContractData(
     var time: String = "20 giờ 00 phút",
     var date: String = "22 tháng 09 năm 2026",
-    var place: String = "558/23 Bình Quới, KP 12, P. Bình Quới, TP. HCM",
+    var place: String = "558/23 Bình Quới, KP 12, phường Bình Quới, Thành phố Hồ Chí Minh",
     var landlord: PersonData = PersonData(
         "HUỲNH CÔNG HÂN", "10/03/1983", "079083010463", "10/08/2021",
-        "Cục Cảnh sát QLHC về TTXH", "558/23 Bình Quới, KP 12, P. Bình Quới, TP. HCM",
-        "558/23 Bình Quới, KP 12, P. Bình Quới, TP. HCM"
+        "Cục Cảnh sát QLHC về TTXH", "558/23 Bình Quới, KP 12, phường Bình Quới, Thành phố Hồ Chí Minh",
+        "558/23 Bình Quới, KP 12, phường Bình Quới, Thành phố Hồ Chí Minh"
     ),
     var tenant: PersonData = PersonData(
-        "TRẦN ĐỖ CÔNG HUY", "17/09/1986", "079086022236", "25/08/2026",
-        "Bộ Công an", "206/2 KP 21, Hiệp Bình, TP. HCM",
-        "558/23 Bình Quới, KP 12, P. Bình Quới, TP. HCM"
+        "NGUYỄN HOÀNG QUỐC HUY", "11/12/2005", "082205003837", "20/10/2024",
+        "Bộ Công an", "Tổ 2, Ấp Hội Gia, xã Mỹ Phong, thành phố Mỹ Tho, tỉnh Đồng Tháp",
+        "558/23 Bình Quới, KP 12, phường Bình Quới, Thành phố Hồ Chí Minh"
     ),
     var area: String = "30 m2",
     var duration: String = "02 năm",
