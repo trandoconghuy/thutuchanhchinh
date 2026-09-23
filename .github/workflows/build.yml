@@ -18,8 +18,10 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
+    - name: Setup Android SDK (Fix Lỗi Tải)
+      uses: android-actions/setup-android@v3.2
+      with:
+        packages: 'platforms;android-34 build-tools;34.0.0'
 
     - name: Create Project Files
       run: |
