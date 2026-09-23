@@ -48,9 +48,20 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.Locale
 import kotlin.math.min
 
 class MainActivity : AppCompatActivity() {
+    private data class ScannedCitizen(
+        val citizenId: String,
+        val oldId: String,
+        val name: String,
+        val birthDate: String,
+        val gender: String,
+        val permanentAddress: String,
+        val issueDate: String
+    )
+
     private val blue = Color.rgb(36, 87, 214)
     private val deepBlue = Color.rgb(17, 50, 124)
     private val navy = Color.rgb(25, 42, 73)
@@ -61,6 +72,8 @@ class MainActivity : AppCompatActivity() {
     private val fields = linkedMapOf<String, EditText>()
     private val contract = ContractData()
     private lateinit var contentHost: FrameLayout
+    private lateinit var topBar: LinearLayout
+    private lateinit var bottomNavigation: View
     private lateinit var tenantStore: TenantStore
     private lateinit var cameraExecutor: ExecutorService
     private var tenantSignature: Bitmap? = null
@@ -68,6 +81,7 @@ class MainActivity : AppCompatActivity() {
     private var scannerDialog: Dialog? = null
     private var cameraProvider: ProcessCameraProvider? = null
     private var pendingGalleryScan = false
+    private var identityResultVisible = false
 
     private val requestCamera = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) showCameraScanner() else toast("Cần quyền camera để quét mã QR trên CCCD")
@@ -107,7 +121,7 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(shell)
 
-        val topBar = LinearLayout(this).apply {
+        topBar = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(16), dp(9), dp(10), dp(9))
             background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(deepBlue, blue)).apply {
@@ -128,7 +142,8 @@ class MainActivity : AppCompatActivity() {
 
         contentHost = FrameLayout(this).apply { clipToPadding = false }
         shell.addView(contentHost, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-        shell.addView(buildBottomNavigation())
+        bottomNavigation = buildBottomNavigation()
+        shell.addView(bottomNavigation)
     }
 
     private fun buildBottomNavigation(): View {
@@ -167,6 +182,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showForm() {
+        showAppChrome()
         val scroll = ScrollView(this).apply { isFillViewport = true; clipToPadding = false }
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -284,6 +300,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showPreview() {
+        showAppChrome()
         collectForm()
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -311,6 +328,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSignatures() {
+        showAppChrome()
         collectForm()
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(13), dp(18), dp(13), dp(100)) }
         body.addView(label("Ký tên trên điện thoại", 21f, Color.rgb(11, 26, 50), true))
@@ -489,14 +507,143 @@ class MainActivity : AppCompatActivity() {
             toast("Mã QR không đúng định dạng CCCD")
             return
         }
-        contract.tenant.citizenId = parts[0].trim()
-        contract.tenant.name = parts[2].trim().uppercase()
-        contract.tenant.birthDate = formatQrDate(parts[3].trim())
-        contract.tenant.permanentAddress = parts[5].trim()
-        contract.tenant.issueDate = if (parts.size > 6) formatQrDate(parts[6].trim()) else contract.tenant.issueDate
-        if (contract.tenant.currentAddress.isBlank()) contract.tenant.currentAddress = contract.place
-        fillTenantFields(contract.tenant)
-        toast("Đã nhập thông tin từ CCCD")
+        val citizen = ScannedCitizen(
+            citizenId = parts[0].trim(),
+            oldId = parts[1].trim().ifBlank { "Không có" },
+            name = parts[2].trim(),
+            birthDate = formatQrDate(parts[3].trim()),
+            gender = parts[4].trim().ifBlank { "Không xác định" },
+            permanentAddress = parts[5].trim(),
+            issueDate = if (parts.size > 6) formatQrDate(parts[6].trim()) else "Không xác định"
+        )
+        showIdentityResult(citizen)
+    }
+
+    private fun showIdentityResult(citizen: ScannedCitizen) {
+        identityResultVisible = true
+        topBar.visibility = View.GONE
+        bottomNavigation.visibility = View.GONE
+
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(24), dp(20), dp(24))
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.rgb(248, 248, 255), Color.rgb(242, 243, 252)))
+        }
+
+        val header = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(24), 0, dp(18), 0)
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Color.rgb(9, 102, 247), Color.rgb(82, 178, 246))).apply {
+                cornerRadius = dp(26).toFloat()
+            }
+            elevation = dp(2).toFloat()
+        }
+        header.addView(label("Thông Tin Căn Cước", 23f, Color.WHITE, true), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val verified = TextView(this).apply {
+            text = "✓ Đã xác thực"
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(14, 177, 91))
+            gravity = Gravity.CENTER
+            setPadding(dp(14), 0, dp(14), 0)
+            background = GradientDrawable().apply { setColor(Color.rgb(225, 253, 239)); cornerRadius = dp(22).toFloat() }
+        }
+        header.addView(verified, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(42)))
+        page.addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(87)))
+
+        val infoCard = MaterialCardView(this).apply {
+            radius = dp(25).toFloat()
+            cardElevation = dp(7).toFloat()
+            setCardBackgroundColor(Color.WHITE)
+            strokeWidth = 0
+        }
+        val info = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(29), dp(26), dp(29), dp(27))
+        }
+        info.addView(identityItem("SỐ CCCD", citizen.citizenId, true))
+        info.addView(View(this).apply { setBackgroundColor(Color.rgb(233, 235, 241)) }, margins(1, top = 21, bottom = 18))
+        info.addView(identityItem("HỌ VÀ TÊN", vietnameseTitleCase(citizen.name), false))
+        info.addView(identityPair("GIỚI TÍNH", citizen.gender, "NGÀY SINH", citizen.birthDate), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 18))
+        info.addView(identityPair("NGÀY CẤP", citizen.issueDate, "CMND CŨ", citizen.oldId), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 18))
+        info.addView(identityItem("NƠI THƯỜNG TRÚ", citizen.permanentAddress, false), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 19))
+        infoCard.addView(info)
+        page.addView(infoCard, margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 20, bottom = 13))
+
+        val copyright = label("🛡 Bản quyền: trandoconghuy@gmail.com", 12f, Color.rgb(137, 143, 158), false).apply {
+            gravity = Gravity.CENTER
+        }
+        page.addView(copyright, margins(dp(33), bottom = 10))
+
+        val scanAgain = actionButton("↻  QUÉT MÃ KHÁC", Color.rgb(18, 105, 240)) { startCameraScan() }.apply {
+            textSize = 15f
+            letterSpacing = .08f
+            cornerRadius = dp(28)
+        }
+        page.addView(scanAgain, margins(dp(58), bottom = 10))
+
+        val fillContract = actionButton("✓  ĐIỀN VÀO HỢP ĐỒNG", green) {
+            contract.tenant.citizenId = citizen.citizenId
+            contract.tenant.name = citizen.name.uppercase(Locale("vi", "VN"))
+            contract.tenant.birthDate = citizen.birthDate
+            contract.tenant.permanentAddress = citizen.permanentAddress
+            contract.tenant.issueDate = citizen.issueDate
+            contract.tenant.issuePlace = "Bộ Công an"
+            if (contract.tenant.currentAddress.isBlank()) contract.tenant.currentAddress = contract.place
+            fields.clear()
+            showForm()
+            toast("Đã điền thông tin CCCD vào hợp đồng")
+        }.apply {
+            textSize = 15f
+            letterSpacing = .06f
+            cornerRadius = dp(28)
+        }
+        page.addView(fillContract, margins(dp(58), bottom = 8))
+
+        val scroll = ScrollView(this).apply { isFillViewport = true; addView(page) }
+        swapContent(scroll)
+    }
+
+    private fun identityItem(caption: String, value: String, prominent: Boolean): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        addView(identityCaption(caption))
+        addView(TextView(this@MainActivity).apply {
+            text = value
+            textSize = if (prominent) 28f else 19f
+            setTextColor(Color.rgb(27, 28, 37))
+            typeface = if (prominent || caption == "HỌ VÀ TÊN") Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            setLineSpacing(dp(2).toFloat(), 1f)
+            if (prominent) letterSpacing = .035f
+        }, margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 5))
+    }
+
+    private fun identityPair(leftCaption: String, leftValue: String, rightCaption: String, rightValue: String): View = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        val left = identityItem(leftCaption, leftValue, false)
+        val right = identityItem(rightCaption, rightValue, false)
+        addView(left, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(9) })
+        addView(right, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(9) })
+    }
+
+    private fun identityCaption(value: String) = TextView(this).apply {
+        text = value
+        textSize = 11f
+        letterSpacing = .08f
+        setTextColor(Color.rgb(143, 147, 159))
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+    }
+
+    private fun vietnameseTitleCase(value: String): String {
+        val locale = Locale("vi", "VN")
+        return value.lowercase(locale).split(Regex("\\s+")).joinToString(" ") { word ->
+            word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() }
+        }
+    }
+
+    private fun showAppChrome() {
+        identityResultVisible = false
+        topBar.visibility = View.VISIBLE
+        bottomNavigation.visibility = View.VISIBLE
     }
 
     private fun fillTenantFields(person: PersonData) {
@@ -511,6 +658,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun formatQrDate(value: String): String = if (value.length == 8 && value.all(Char::isDigit))
         "${value.substring(0, 2)}/${value.substring(2, 4)}/${value.substring(4)}" else value
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (identityResultVisible) showForm() else super.onBackPressed()
+    }
 
     private fun confirmReset() {
         AlertDialog.Builder(this).setTitle("Làm mới hợp đồng")
