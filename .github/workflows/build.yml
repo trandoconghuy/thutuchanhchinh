@@ -1,4 +1,4 @@
-name: Build Android APK V8
+name: Build Android APK V9
 
 on:
   push:
@@ -18,7 +18,7 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Khôi phục và Lưu trữ Chữ ký (Sửa lỗi cài đè)
+    - name: Khôi phục và Lưu trữ Chữ ký (Bảo vệ Cài đè)
       uses: actions/cache@v4
       with:
         path: ~/.android/debug.keystore
@@ -40,7 +40,7 @@ jobs:
         cat << 'EOF' > settings.gradle.kts
         pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
         dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
-        rootProject.name = "CCCDScannerV8"
+        rootProject.name = "CCCDScannerV9"
         include(":app")
         EOF
 
@@ -63,8 +63,8 @@ jobs:
                 applicationId = "com.example.cccdscanner"
                 minSdk = 24
                 targetSdk = 34
-                versionCode = 8
-                versionName = "8.0"
+                versionCode = 9
+                versionName = "9.0 Pro"
             }
             compileOptions {
                 sourceCompatibility = JavaVersion.VERSION_17
@@ -87,7 +87,6 @@ jobs:
         }
         EOF
 
-        # Khai báo FileProvider an toàn 100% để chống văng app khi chụp ảnh
         cat << 'EOF' > app/src/main/res/xml/file_paths.xml
         <?xml version="1.0" encoding="utf-8"?>
         <paths>
@@ -112,13 +111,12 @@ jobs:
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
             <uses-permission android:name="android.permission.CAMERA" />
             <uses-permission android:name="android.permission.INTERNET" />
-            <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
             <uses-feature android:name="android.hardware.camera" android:required="true" />
             <uses-feature android:name="android.hardware.camera.autofocus" />
             
             <application
                 android:allowBackup="true"
-                android:label="CCCD Pro"
+                android:label="CCCD Pro Max"
                 android:theme="@style/Theme.AppCompat.Light.NoActionBar">
                 
                 <provider
@@ -152,6 +150,7 @@ jobs:
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
 
+            <!-- Khung HUD quét toàn màn hình mới -->
             <com.example.cccdscanner.ScannerOverlayView
                 android:id="@+id/overlayView"
                 android:layout_width="match_parent"
@@ -163,20 +162,25 @@ jobs:
                 android:layout_height="wrap_content"
                 android:layout_gravity="top|end"
                 android:layout_margin="16dp"
-                android:text="🔄 Cập Nhật Vision"
+                android:text="🔄 Tải File Cập Nhật"
                 android:textSize="12sp"
                 android:backgroundTint="#d32f2f"
                 android:textColor="#ffffff"
                 android:elevation="10dp"/>
 
+            <!-- Sửa text cho đúng tinh thần toàn màn hình -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Di chuyển mã QR vào giữa khung hình"
-                android:textColor="#ffffff"
+                android:text="QUÉT TOÀN MÀN HÌNH\nĐưa mã QR vào bất kỳ vị trí nào"
+                android:textAlignment="center"
+                android:textColor="#00E676"
+                android:textStyle="bold"
                 android:textSize="16sp"
                 android:layout_gravity="center_horizontal"
-                android:layout_marginTop="100dp" />
+                android:layout_marginTop="80dp"
+                android:shadowColor="#000000"
+                android:shadowRadius="10" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -245,6 +249,8 @@ jobs:
         import androidx.activity.result.contract.ActivityResultContracts
         import androidx.appcompat.app.AppCompatActivity
         import androidx.camera.core.*
+        import androidx.camera.core.resolutionselector.AspectRatioStrategy
+        import androidx.camera.core.resolutionselector.ResolutionSelector
         import androidx.camera.lifecycle.ProcessCameraProvider
         import androidx.camera.view.PreviewView
         import androidx.core.content.ContextCompat
@@ -257,20 +263,17 @@ jobs:
         import java.util.concurrent.ExecutorService
         import java.util.concurrent.Executors
 
+        // Lớp vẽ HUD Toàn Màn Hình Không Góc Tối
         class ScannerOverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
-            private val paint = Paint().apply { color = Color.parseColor("#99000000") }
-            private val strokePaint = Paint().apply { color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 10f; strokeCap = Paint.Cap.ROUND }
+            private val strokePaint = Paint().apply { color = Color.parseColor("#00E676"); style = Paint.Style.STROKE; strokeWidth = 14f; strokeCap = Paint.Cap.ROUND }
             override fun onDraw(canvas: Canvas) {
                 super.onDraw(canvas)
-                val w = width.toFloat(); val h = height.toFloat(); val s = w * 0.75f
-                val l = (w - s) / 2; val t = (h - s) / 2; val r = l + s; val b = t + s
-                canvas.drawRect(0f, 0f, w, t, paint); canvas.drawRect(0f, b, w, h, paint)
-                canvas.drawRect(0f, t, l, b, paint); canvas.drawRect(r, t, w, b, paint)
-                val c = 60f
-                canvas.drawLine(l, t, l + c, t, strokePaint); canvas.drawLine(l, t, l, t + c, strokePaint)
-                canvas.drawLine(r, t, r - c, t, strokePaint); canvas.drawLine(r, t, r, t + c, strokePaint)
-                canvas.drawLine(l, b, l + c, b, strokePaint); canvas.drawLine(l, b, l, b - c, strokePaint)
-                canvas.drawLine(r, b, r - c, b, strokePaint); canvas.drawLine(r, b, r, b - c, strokePaint)
+                val w = width.toFloat(); val h = height.toFloat()
+                val pad = 60f; val c = 120f
+                canvas.drawLine(pad, pad, pad + c, pad, strokePaint); canvas.drawLine(pad, pad, pad, pad + c, strokePaint)
+                canvas.drawLine(w - pad, pad, w - pad - c, pad, strokePaint); canvas.drawLine(w - pad, pad, w - pad, pad + c, strokePaint)
+                canvas.drawLine(pad, h - pad, pad + c, h - pad, strokePaint); canvas.drawLine(pad, h - pad, pad, h - pad - c, strokePaint)
+                canvas.drawLine(w - pad, h - pad, w - pad - c, h - pad, strokePaint); canvas.drawLine(w - pad, h - pad, w - pad, h - pad - c, strokePaint)
             }
         }
 
@@ -332,11 +335,9 @@ jobs:
                 }
 
                 findViewById<Button>(R.id.btnUpdate).setOnClickListener {
-                    Toast.makeText(this, "Đang mở trang tải bản cập nhật...", Toast.LENGTH_SHORT).show()
-                    // URL trỏ thẳng tới GitHub Actions (Do Artifact yêu cầu đăng nhập)
+                    Toast.makeText(this, "Đang mở trang tải File Artifacts...", Toast.LENGTH_LONG).show()
                     val githubActionsUrl = "https://github.com/trandoconghuy/thutuchanhchinh/actions"
-                    val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(githubActionsUrl))
-                    startActivity(browserIntent)
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(githubActionsUrl)))
                 }
 
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startCamera()
@@ -348,11 +349,17 @@ jobs:
                 providerFuture.addListener({
                     cameraProvider = providerFuture.get()
                     val preview = Preview.Builder().build().also { it.setSurfaceProvider(viewFinder.surfaceProvider) }
+                    
+                    // SỬ DỤNG CHIẾN LƯỢC QUÉT TOÀN MÀN HÌNH (GÓC RỘNG NHẤT TỈ LỆ 16:9)
+                    val resolutionSelector = ResolutionSelector.Builder()
+                        .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
+                        .build()
+
                     val analyzer = ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .setResolutionSelector(androidx.camera.core.resolutionselector.ResolutionSelector.Builder()
-                            .setResolutionStrategy(androidx.camera.core.resolutionselector.ResolutionStrategy(android.util.Size(1280, 720), androidx.camera.core.resolutionselector.ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER)).build())
+                        .setResolutionSelector(resolutionSelector)
                         .build()
+                        
                     analyzer.setAnalyzer(cameraExecutor) { proxy ->
                         val mediaImage = proxy.image
                         if (mediaImage != null && isScanning) {
@@ -372,31 +379,42 @@ jobs:
                 }, ContextCompat.getMainExecutor(this))
             }
 
+            // SỬA LỖI LIỆT NÚT: Đẩy toàn bộ quá trình đọc ảnh vào Luồng Ngầm (Background Thread)
             private fun processImageFromUri(uri: Uri) {
-                try {
-                    val image = InputImage.fromFilePath(this, uri)
-                    scanner.process(image)
-                        .addOnSuccessListener { barcodes ->
-                            if (barcodes.isEmpty()) {
-                                Toast.makeText(this, "Không tìm thấy mã QR CCCD trong ảnh!", Toast.LENGTH_LONG).show()
-                                isScanning = true; startCamera()
-                            } else {
-                                for (barcode in barcodes) {
-                                    if (!barcode.rawValue.isNullOrEmpty() && barcode.rawValue!!.contains("|")) {
-                                        handleSuccess(barcode.rawValue!!)
-                                        return@addOnSuccessListener
+                cameraExecutor.execute {
+                    try {
+                        val image = InputImage.fromFilePath(this@MainActivity, uri)
+                        scanner.process(image)
+                            .addOnSuccessListener { barcodes ->
+                                if (barcodes.isEmpty()) {
+                                    runOnUiThread {
+                                        Toast.makeText(this@MainActivity, "Không tìm thấy mã QR CCCD trong ảnh!", Toast.LENGTH_LONG).show()
+                                        isScanning = true; startCamera()
+                                    }
+                                } else {
+                                    for (barcode in barcodes) {
+                                        if (!barcode.rawValue.isNullOrEmpty() && barcode.rawValue!!.contains("|")) {
+                                            runOnUiThread { handleSuccess(barcode.rawValue!!) }
+                                            return@addOnSuccessListener
+                                        }
+                                    }
+                                    runOnUiThread {
+                                        Toast.makeText(this@MainActivity, "QR không đúng chuẩn CCCD!", Toast.LENGTH_LONG).show()
+                                        isScanning = true; startCamera()
                                     }
                                 }
-                                Toast.makeText(this, "QR không đúng chuẩn CCCD!", Toast.LENGTH_LONG).show()
-                                isScanning = true; startCamera()
+                            }.addOnFailureListener {
+                                runOnUiThread {
+                                    Toast.makeText(this@MainActivity, "Lỗi phân tích AI.", Toast.LENGTH_SHORT).show()
+                                    isScanning = true; startCamera()
+                                }
                             }
-                        }.addOnFailureListener {
-                            Toast.makeText(this, "Lỗi phân tích ảnh. Thử ảnh khác.", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        runOnUiThread {
+                            Toast.makeText(this@MainActivity, "Không thể đọc file ảnh dung lượng lớn", Toast.LENGTH_SHORT).show()
                             isScanning = true; startCamera()
                         }
-                } catch (e: Exception) {
-                    Toast.makeText(this, "Lỗi xử lý file ảnh", Toast.LENGTH_SHORT).show()
-                    isScanning = true; startCamera()
+                    }
                 }
             }
 
@@ -421,7 +439,7 @@ jobs:
       run: |
         gradle wrapper --gradle-version 8.4
         chmod +x gradlew
-        ./gradlew assembleDebug --stacktrace
+        ./gradlew assembleDebug
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
