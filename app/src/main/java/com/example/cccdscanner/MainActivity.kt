@@ -10,7 +10,14 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.ImageDecoder
+import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.media.MediaScannerConnection
@@ -79,6 +86,17 @@ class MainActivity : AppCompatActivity() {
         val issueDate: String
     )
 
+    private data class GalleryScanState(
+        val original: Bitmap,
+        var potentialArea: Rect? = null
+    )
+
+    private data class GalleryCandidate(
+        val bitmap: Bitmap,
+        val rotation: Int,
+        val recycleAfterUse: Boolean
+    )
+
     private val blue = Color.rgb(36, 87, 214)
     private val deepBlue = Color.rgb(17, 50, 124)
     private val navy = Color.rgb(25, 42, 73)
@@ -106,6 +124,14 @@ class MainActivity : AppCompatActivity() {
             BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
         )
     }
+    private val galleryBarcodeScanner by lazy {
+        BarcodeScanning.getClient(
+            BarcodeScannerOptions.Builder()
+                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                .enableAllPotentialBarcodes()
+                .build()
+        )
+    }
     private var pendingGalleryScan = false
     private var identityResultVisible = false
 
@@ -115,19 +141,7 @@ class MainActivity : AppCompatActivity() {
 
     private val pickQrImage = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@registerForActivityResult
-        pendingGalleryScan = true
-        val image = runCatching { InputImage.fromFilePath(this, uri) }.getOrElse {
-            pendingGalleryScan = false
-            toast("Không thể đọc ảnh đã chọn")
-            return@registerForActivityResult
-        }
-        barcodeScanner.process(image)
-            .addOnSuccessListener { codes ->
-                val raw = codes.firstOrNull { it.format == Barcode.FORMAT_QR_CODE }?.rawValue
-                if (raw.isNullOrBlank()) toast("Ảnh không có mã QR CCCD hợp lệ") else acceptQr(raw)
-            }
-            .addOnFailureListener { toast("Không thể phân tích mã QR trong ảnh") }
-            .addOnCompleteListener { pendingGalleryScan = false }
+        analyzeGalleryQr(uri)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -149,27 +163,45 @@ class MainActivity : AppCompatActivity() {
 
         topBar = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(9), dp(10), dp(9))
+            setPadding(dp(12), dp(9), dp(10), dp(9))
             background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(deepBlue, blue)).apply {
                 cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, dp(18).toFloat(), dp(18).toFloat(), dp(18).toFloat(), dp(18).toFloat())
             }
         }
-        val topTitle = TextView(this).apply {
-            text = "▣  Văn bản số · Hợp đồng"
-            setTextColor(Color.WHITE)
-            textSize = 19f
-            typeface = Typeface.DEFAULT_BOLD
+        val topLogo = ImageView(this).apply {
+            setImageResource(R.drawable.app_icon)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            background = rounded(Color.WHITE, 10f)
+            contentDescription = "Biểu trưng chuyển đổi văn bản số"
         }
-        topBar.addView(topTitle, LinearLayout.LayoutParams(0, dp(48), 1f))
+        topBar.addView(topLogo, LinearLayout.LayoutParams(dp(38), dp(38)).apply { marginEnd = dp(9) })
+        val titleBlock = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(label("CHUYỂN ĐỔI VĂN BẢN SỐ", 9f, Color.rgb(190, 214, 255), true).apply { letterSpacing = .1f })
+            addView(label("Thông tin hợp đồng", 18f, Color.WHITE, true))
+        }
+        topBar.addView(titleBlock, LinearLayout.LayoutParams(0, dp(48), 1f))
         topBar.addView(iconButton("↻", "Làm mới hợp đồng") { confirmReset() })
-        topBar.addView(space(dp(8), 1))
+        topBar.addView(space(dp(7), 1))
         topBar.addView(iconButton("×", "Đóng ứng dụng", red) { finish() })
-        shell.addView(topBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(66)))
+        shell.addView(topBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(70)))
 
         contentHost = FrameLayout(this).apply { clipToPadding = false }
         shell.addView(contentHost, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        shell.addView(buildCopyrightBar(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(28)))
         bottomNavigation = buildBottomNavigation()
         shell.addView(bottomNavigation)
+    }
+
+    private fun buildCopyrightBar(): View = TextView(this).apply {
+        text = "🛡  Bản quyền: trandoconghuy@gmail.com"
+        textSize = 10f
+        setTextColor(Color.rgb(111, 121, 140))
+        gravity = Gravity.CENTER
+        setPadding(dp(8), 0, dp(8), 0)
+        background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Color.rgb(244, 247, 252), Color.rgb(235, 241, 251), Color.rgb(244, 247, 252)))
+        contentDescription = "Bản quyền trandoconghuy@gmail.com"
     }
 
     private fun buildBottomNavigation(): View {
@@ -252,9 +284,6 @@ class MainActivity : AppCompatActivity() {
         page.addView(space(1, 0), LinearLayout.LayoutParams(1, 0, 1f))
         page.addView(buildScanPanel(), margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 14))
         page.addView(buildLibraryPanel(), margins(ViewGroup.LayoutParams.WRAP_CONTENT))
-        page.addView(label("Bản quyền sáng tạo · trandoconghuy@gmail.com", 10f, Color.rgb(104, 118, 143), false).apply {
-            gravity = Gravity.CENTER
-        }, margins(dp(30), top = 12))
         swapContent(page)
     }
 
@@ -645,6 +674,132 @@ class MainActivity : AppCompatActivity() {
             }.setNegativeButton("Hủy", null).show()
     }
 
+    private fun analyzeGalleryQr(uri: Uri) {
+        if (pendingGalleryScan) return
+        pendingGalleryScan = true
+        toast("Đang phân tích ảnh QR nhiều lớp…")
+        cameraExecutor.execute {
+            val bitmap = runCatching { decodeGalleryBitmap(uri) }.getOrNull()
+            if (bitmap == null) {
+                pendingGalleryScan = false
+                runOnUiThread { toast("Không thể đọc ảnh đã chọn") }
+                return@execute
+            }
+            scanGalleryVariant(GalleryScanState(bitmap), 0)
+        }
+    }
+
+    private fun scanGalleryVariant(state: GalleryScanState, attempt: Int) {
+        if (attempt >= 8) {
+            state.original.recycle()
+            pendingGalleryScan = false
+            runOnUiThread { toast("Không nhận diện được QR CCCD. Hãy chọn ảnh rõ hơn hoặc cắt ảnh gần mã QR.") }
+            return
+        }
+
+        val candidate = createGalleryCandidate(state, attempt)
+        val image = InputImage.fromBitmap(candidate.bitmap, candidate.rotation)
+        galleryBarcodeScanner.process(image)
+            .addOnSuccessListener { codes ->
+                val decoded = codes.firstOrNull {
+                    !it.rawValue.isNullOrBlank() && it.rawValue.orEmpty().count { char -> char == '|' } >= 5
+                }?.rawValue
+                if (attempt == 0 && state.potentialArea == null) {
+                    state.potentialArea = codes.mapNotNull { it.boundingBox }
+                        .maxByOrNull { it.width().toLong() * it.height().toLong() }
+                }
+                if (!decoded.isNullOrBlank()) {
+                    if (candidate.recycleAfterUse && !candidate.bitmap.isRecycled) candidate.bitmap.recycle()
+                    state.original.recycle()
+                    pendingGalleryScan = false
+                    acceptQr(decoded)
+                } else {
+                    if (candidate.recycleAfterUse && !candidate.bitmap.isRecycled) candidate.bitmap.recycle()
+                    scanGalleryVariant(state, attempt + 1)
+                }
+            }
+            .addOnFailureListener {
+                if (candidate.recycleAfterUse && !candidate.bitmap.isRecycled) candidate.bitmap.recycle()
+                scanGalleryVariant(state, attempt + 1)
+            }
+    }
+
+    private fun createGalleryCandidate(state: GalleryScanState, attempt: Int): GalleryCandidate = when (attempt) {
+        0 -> GalleryCandidate(state.original, 0, false)
+        1 -> state.potentialArea?.let { area ->
+            val cropped = cropPotentialQr(state.original, area)
+            GalleryCandidate(cropped, 0, cropped !== state.original)
+        } ?: GalleryCandidate(enhanceQrImage(state.original), 0, true)
+        2 -> GalleryCandidate(state.original, 90, false)
+        3 -> GalleryCandidate(state.original, 180, false)
+        4 -> GalleryCandidate(state.original, 270, false)
+        5 -> GalleryCandidate(enhanceQrImage(state.original), 0, true)
+        6 -> GalleryCandidate(enhanceQrImage(state.original), 90, true)
+        else -> GalleryCandidate(enhanceQrImage(state.original), 270, true)
+    }
+
+    private fun decodeGalleryBitmap(uri: Uri): Bitmap {
+        val maxSide = 4096
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val source = ImageDecoder.createSource(contentResolver, uri)
+            return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                val width = info.size.width
+                val height = info.size.height
+                val longest = maxOf(width, height)
+                if (longest > maxSide) {
+                    val scale = maxSide.toFloat() / longest
+                    decoder.setTargetSize((width * scale).toInt(), (height * scale).toInt())
+                }
+            }
+        }
+
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > maxSide) sample *= 2
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sample
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        return contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, options)
+        } ?: error("Ảnh không hợp lệ")
+    }
+
+    private fun cropPotentialQr(source: Bitmap, detected: Rect): Bitmap {
+        val padding = maxOf(detected.width(), detected.height()) / 2
+        val left = (detected.left - padding).coerceIn(0, source.width - 1)
+        val top = (detected.top - padding).coerceIn(0, source.height - 1)
+        val right = (detected.right + padding).coerceIn(left + 1, source.width)
+        val bottom = (detected.bottom + padding).coerceIn(top + 1, source.height)
+        val crop = Bitmap.createBitmap(source, left, top, right - left, bottom - top)
+        val longest = maxOf(crop.width, crop.height)
+        if (longest >= 1600) return crop
+        val factor = (1600f / longest).coerceAtMost(3f)
+        val scaled = Bitmap.createScaledBitmap(crop, (crop.width * factor).toInt(), (crop.height * factor).toInt(), true)
+        if (scaled !== crop) crop.recycle()
+        return scaled
+    }
+
+    private fun enhanceQrImage(source: Bitmap): Bitmap {
+        val output = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.RGB_565)
+        val grayscale = ColorMatrix().apply { setSaturation(0f) }
+        val contrast = 1.65f
+        val offset = (-0.5f * contrast + 0.5f) * 255f
+        grayscale.postConcat(ColorMatrix(floatArrayOf(
+            contrast, 0f, 0f, 0f, offset,
+            0f, contrast, 0f, 0f, offset,
+            0f, 0f, contrast, 0f, offset,
+            0f, 0f, 0f, 1f, 0f
+        )))
+        Canvas(output).drawBitmap(source, 0f, 0f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            colorFilter = ColorMatrixColorFilter(grayscale)
+            isFilterBitmap = true
+        })
+        return output
+    }
+
     private fun startCameraScan() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) showCameraScanner()
         else requestCamera.launch(Manifest.permission.CAMERA)
@@ -681,6 +836,13 @@ class MainActivity : AppCompatActivity() {
             camera?.cameraControl?.enableTorch(enable)
         }, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginStart = dp(6); marginEnd = dp(6) })
         controls.addView(actionButton("Đóng", red) { dialog.dismiss() }, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginStart = dp(6) })
+        val scannerCopyright = label("🛡  Bản quyền: trandoconghuy@gmail.com", 10f, Color.rgb(218, 226, 241), false).apply {
+            gravity = Gravity.CENTER
+            background = rounded(Color.argb(165, 9, 22, 45), 10f)
+        }
+        root.addView(scannerCopyright, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(28), Gravity.BOTTOM).apply {
+            setMargins(dp(32), 0, dp(32), dp(92))
+        })
         root.addView(controls, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(58), Gravity.BOTTOM).apply { setMargins(dp(18), 0, dp(18), dp(30)) })
         dialog.setContentView(root)
         dialog.setOnDismissListener {
@@ -846,11 +1008,6 @@ class MainActivity : AppCompatActivity() {
         infoCard.addView(info)
         page.addView(infoCard, margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 20, bottom = 13))
 
-        val copyright = label("🛡 Bản quyền: trandoconghuy@gmail.com", 12f, Color.rgb(137, 143, 158), false).apply {
-            gravity = Gravity.CENTER
-        }
-        page.addView(copyright, margins(dp(33), bottom = 10))
-
         val scanAgain = actionButton("↻  QUÉT MÃ KHÁC", Color.rgb(18, 105, 240)) { startCameraScan() }.apply {
             textSize = 15f
             letterSpacing = .08f
@@ -999,6 +1156,8 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         cameraProvider?.unbindAll()
         cameraExecutor.shutdown()
+        barcodeScanner.close()
+        galleryBarcodeScanner.close()
         tenantSignature?.recycle()
         landlordSignature?.recycle()
         super.onDestroy()

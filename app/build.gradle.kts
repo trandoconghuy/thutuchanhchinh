@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.cccdscanner"
         minSdk = 24
         targetSdk = 34
-        versionCode = 24
-        versionName = "2.4.0"
+        versionCode = 25
+        versionName = "2.5.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
