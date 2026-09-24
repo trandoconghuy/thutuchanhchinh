@@ -1,0 +1,241 @@
+package com.example.cccdscanner
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.Typeface
+import android.graphics.pdf.PdfDocument
+import android.os.Environment
+import androidx.core.content.res.ResourcesCompat
+import java.io.File
+import java.io.FileOutputStream
+import kotlin.math.min
+
+object Ct01Renderer {
+    const val PAGE_WIDTH = 595
+    const val PAGE_HEIGHT = 842
+    const val A4_PRINT_WIDTH = 2480
+    const val A4_PRINT_HEIGHT = 3508
+    const val PAGE_COUNT = 2
+    private const val LEFT = 50f
+    private const val RIGHT = 38f
+
+    private data class Fonts(val regular: Typeface, val bold: Typeface, val italic: Typeface)
+
+    fun renderBitmap(context: Context, data: Ct01Data, declarantSignature: Bitmap?, ownerSignature: Bitmap?, multiplier: Int = 2): Bitmap {
+        val gap = 14 * multiplier
+        val bitmap = Bitmap.createBitmap(PAGE_WIDTH * multiplier, PAGE_HEIGHT * PAGE_COUNT * multiplier + gap, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(Color.rgb(226, 232, 242))
+        val fonts = fonts(context)
+        repeat(PAGE_COUNT) { index ->
+            canvas.save()
+            canvas.translate(0f, (index * PAGE_HEIGHT * multiplier + index * gap).toFloat())
+            canvas.scale(multiplier.toFloat(), multiplier.toFloat())
+            drawPage(canvas, index + 1, data, declarantSignature, ownerSignature, fonts)
+            canvas.restore()
+        }
+        return bitmap
+    }
+
+    fun renderCombinedA4Bitmap(context: Context, data: Ct01Data, declarantSignature: Bitmap?, ownerSignature: Bitmap?): Bitmap {
+        val gap = 32
+        val bitmap = Bitmap.createBitmap(A4_PRINT_WIDTH, A4_PRINT_HEIGHT * PAGE_COUNT + gap, Bitmap.Config.RGB_565)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(Color.rgb(226, 232, 242))
+        val fonts = fonts(context)
+        repeat(PAGE_COUNT) { index ->
+            canvas.save()
+            canvas.translate(0f, (index * (A4_PRINT_HEIGHT + gap)).toFloat())
+            canvas.scale(A4_PRINT_WIDTH / PAGE_WIDTH.toFloat(), A4_PRINT_HEIGHT / PAGE_HEIGHT.toFloat())
+            drawPage(canvas, index + 1, data, declarantSignature, ownerSignature, fonts)
+            canvas.restore()
+        }
+        return bitmap
+    }
+
+    fun createPdf(context: Context, data: Ct01Data, declarantSignature: Bitmap?, ownerSignature: Bitmap?): File {
+        val document = PdfDocument()
+        val fonts = fonts(context)
+        repeat(PAGE_COUNT) { index ->
+            val page = document.startPage(PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, index + 1).create())
+            drawPage(page.canvas, index + 1, data, declarantSignature, ownerSignature, fonts)
+            document.finishPage(page)
+        }
+        val directory = File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) ?: context.filesDir, "CT01")
+        check(directory.exists() || directory.mkdirs()) { "Không thể tạo thư mục CT01" }
+        val file = File(directory, "To_Khai_CT01_${safeFileStamp()}.pdf")
+        FileOutputStream(file).use { document.writeTo(it) }
+        document.close()
+        return file
+    }
+
+    private fun fonts(context: Context) = Fonts(
+        ResourcesCompat.getFont(context, R.font.liberation_serif_regular) ?: Typeface.SERIF,
+        ResourcesCompat.getFont(context, R.font.liberation_serif_bold) ?: Typeface.create(Typeface.SERIF, Typeface.BOLD),
+        ResourcesCompat.getFont(context, R.font.liberation_serif_italic) ?: Typeface.create(Typeface.SERIF, Typeface.ITALIC)
+    )
+
+    private fun drawPage(canvas: Canvas, page: Int, data: Ct01Data, declarantSignature: Bitmap?, ownerSignature: Bitmap?, fonts: Fonts) {
+        canvas.drawRect(0f, 0f, PAGE_WIDTH.toFloat(), PAGE_HEIGHT.toFloat(), Paint().apply { color = Color.WHITE })
+        if (page == 1) drawForm(canvas, data, declarantSignature, ownerSignature, fonts) else drawNotes(canvas, fonts)
+    }
+
+    private fun drawForm(canvas: Canvas, data: Ct01Data, declarantSignature: Bitmap?, ownerSignature: Bitmap?, fonts: Fonts) {
+        val p = paint(fonts.regular, 10f)
+        val b = paint(fonts.bold, 10f)
+        val small = paint(fonts.regular, 8f)
+        val smallBold = paint(fonts.bold, 8f)
+        val width = PAGE_WIDTH - LEFT - RIGHT
+        var y = 31f
+        drawRight(canvas, "Mẫu CT01 ban hành kèm theo Thông tư số 53/2025/TT-BCA", PAGE_WIDTH - RIGHT, y, small)
+        y += 11f
+        drawRight(canvas, "ngày 01/7/2025 của Bộ trưởng Bộ Công an", PAGE_WIDTH - RIGHT, y, small)
+        y += 24f
+        drawCenter(canvas, "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", y, b)
+        y += 14f
+        drawCenter(canvas, "Độc lập – Tự do – Hạnh phúc", y, b)
+        canvas.drawLine(220f, y + 4f, 375f, y + 4f, Paint().apply { color = Color.BLACK; strokeWidth = .8f })
+        y += 31f
+        drawCenter(canvas, "TỜ KHAI THAY ĐỔI THÔNG TIN CƯ TRÚ", y, paint(fonts.bold, 14f))
+        y += 25f
+        y = drawWrapped(canvas, "Kính gửi(1): ${data.authority}", LEFT, y, width, p, 14f)
+        y += 3f
+        y = drawWrapped(canvas, "1. Họ, chữ đệm và tên khai sinh: ${data.declarantName}", LEFT, y, width, p, 14f)
+        y = drawWrapped(canvas, "2. Ngày, tháng, năm sinh: ${data.birthDate}      3. Giới tính: ${data.gender}", LEFT, y, width, p, 14f)
+        canvas.drawText("4. Số định danh cá nhân:", LEFT, y, p)
+        drawDigitBoxes(canvas, data.citizenId, LEFT + 145f, y - 11f, 15f, 17f, smallBold)
+        y += 23f
+        y = drawWrapped(canvas, "5. Số điện thoại liên hệ: ${data.phone}      6. Email: ${data.email}", LEFT, y, width, p, 14f)
+        y = drawWrapped(canvas, "7. Họ, chữ đệm và tên chủ hộ: ${data.headName}      8. Mối quan hệ với chủ hộ: ${data.relationshipToHead}", LEFT, y, width, p, 14f)
+        canvas.drawText("9. Số định danh cá nhân của chủ hộ:", LEFT, y, p)
+        drawDigitBoxes(canvas, data.headCitizenId, LEFT + 195f, y - 11f, 15f, 17f, smallBold)
+        y += 23f
+        y = drawWrapped(canvas, "10. Nội dung đề nghị(2): ${data.requestContent}", LEFT, y, width, p, 14f)
+        y += 2f
+        canvas.drawText("11. Những thành viên trong hộ gia đình cùng thay đổi:", LEFT, y, p)
+        y += 8f
+
+        val tableTop = y
+        val rowHeights = 23f
+        val cols = floatArrayOf(24f, 145f, 82f, 48f, 104f, 104f)
+        val headers = arrayOf("TT", "Họ, chữ đệm và tên", "Ngày sinh", "Giới tính", "Số định danh cá nhân", "Quan hệ với chủ hộ")
+        drawTableGrid(canvas, LEFT, tableTop, cols, rowHeights, 8)
+        var x = LEFT
+        headers.forEachIndexed { index, text ->
+            drawCellText(canvas, text, x, tableTop, cols[index], rowHeights, smallBold)
+            x += cols[index]
+        }
+        repeat(7) { row ->
+            val member = data.members.getOrNull(row)
+            val values = if (member == null) arrayOf("${row + 1}", "", "", "", "", "") else arrayOf(
+                "${row + 1}", member.name, member.birthDate, member.gender, member.citizenId, member.relationship
+            )
+            x = LEFT
+            values.forEachIndexed { index, text ->
+                drawCellText(canvas, text, x, tableTop + rowHeights * (row + 1), cols[index], rowHeights, small)
+                x += cols[index]
+            }
+        }
+        y = tableTop + rowHeights * 8 + 12f
+
+        val signatureWidth = width / 4f
+        val signatureTop = y
+        val titles = arrayOf("Ý KIẾN CỦA\nCHỦ HỘ(3)", "Ý KIẾN CỦA CHỦ SỞ HỮU\nCHỖ Ở HỢP PHÁP(4)", "Ý KIẾN CỦA CHA, MẸ\nHOẶC NGƯỜI GIÁM HỘ(5)", "NGƯỜI KÊ KHAI(6)")
+        titles.forEachIndexed { index, text -> drawMultilineCentered(canvas, text, LEFT + index * signatureWidth, signatureTop, signatureWidth, smallBold, 10f) }
+        drawCenteredIn(canvas, "${data.signingPlace}, ${data.signingDate}", LEFT + signatureWidth, signatureTop + 28f, signatureWidth, small)
+        drawCenteredIn(canvas, data.legalOwnerName, LEFT + signatureWidth, signatureTop + 99f, signatureWidth, smallBold)
+        drawCenteredIn(canvas, data.legalOwnerCitizenId, LEFT + signatureWidth, signatureTop + 111f, signatureWidth, small)
+        drawCenteredIn(canvas, "${data.signingPlace}, ${data.signingDate}", LEFT + signatureWidth * 3, signatureTop + 28f, signatureWidth, small)
+        drawCenteredIn(canvas, data.declarantName, LEFT + signatureWidth * 3, signatureTop + 111f, signatureWidth, smallBold)
+        ownerSignature?.let { drawSignature(canvas, it, LEFT + signatureWidth + 13f, signatureTop + 42f, signatureWidth - 26f, 50f) }
+        declarantSignature?.let { drawSignature(canvas, it, LEFT + signatureWidth * 3 + 13f, signatureTop + 42f, signatureWidth - 26f, 50f) }
+    }
+
+    private fun drawNotes(canvas: Canvas, fonts: Fonts) {
+        val p = paint(fonts.regular, 7.7f)
+        val b = paint(fonts.bold, 9f)
+        val i = paint(fonts.italic, 7.5f)
+        var y = 45f
+        canvas.drawText("Chú thích:", LEFT, y, b)
+        y += 16f
+        val notes = listOf(
+            "(1) Cơ quan đăng ký cư trú.",
+            "(2) Ghi rõ ràng, cụ thể nội dung đề nghị. Ví dụ: ghi chi tiết thông tin nơi đề nghị đăng ký thường trú hoặc nơi đề nghị đăng ký tạm trú hoặc nội dung đề nghị xác nhận thông tin về cư trú...",
+            "(3) Áp dụng đối với các trường hợp quy định tại khoản 2, khoản 3, khoản 5, khoản 6 Điều 20; khoản 1 Điều 25; điểm a khoản 1 Điều 26 Luật Cư trú (trường hợp người đứng đầu cơ sở trợ giúp xã hội quyết định chủ hộ). Việc lấy ý kiến của chủ hộ được thực hiện theo các phương thức sau:",
+            "a) Chủ hộ ghi rõ nội dung đồng ý và ký, ghi rõ họ tên vào Tờ khai.\nb) Chủ hộ xác nhận nội dung đồng ý thông qua ứng dụng định danh quốc gia hoặc các dịch vụ công trực tuyến khác.\nc) Chủ hộ có văn bản riêng ghi rõ nội dung đồng ý (văn bản này không phải công chứng, chứng thực).",
+            "(4) Áp dụng đối với các trường hợp quy định tại khoản 2, khoản 3, khoản 4, khoản 5, khoản 6 Điều 20; khoản 1 Điều 25 Luật Cư trú; điểm a khoản 1 Điều 26 Luật Cư trú. Việc lấy ý kiến của chủ sở hữu chỗ ở hợp pháp được thực hiện theo các phương thức sau:",
+            "a) Chủ sở hữu chỗ ở hợp pháp ghi rõ nội dung đồng ý và ký, ghi rõ họ tên vào Tờ khai.\nb) Chủ sở hữu chỗ ở hợp pháp xác nhận nội dung đồng ý thông qua ứng dụng định danh quốc gia hoặc các dịch vụ công trực tuyến khác.\nc) Chủ sở hữu chỗ ở hợp pháp có văn bản riêng ghi rõ nội dung đồng ý (văn bản này không phải công chứng, chứng thực).",
+            "Ghi chú: Trường hợp chủ sở hữu chỗ ở hợp pháp gồm nhiều cá nhân, tổ chức thì phải có ý kiến đồng ý của tất cả các đồng sở hữu trừ trường hợp đã có thỏa thuận về việc cử đại diện có ý kiến đồng ý; Trường hợp chủ sở hữu chỗ ở hợp pháp xác nhận nội dung đồng ý thông qua ứng dụng định danh quốc gia thì công dân phải kê khai thông tin về họ, chữ đệm, tên và số ĐDCN của chủ sở hữu chỗ ở hợp pháp.",
+            "Trường hợp đăng ký thường trú theo quy định tại điểm a Khoản 2 Điều 20 Luật Cư trú mà chỗ ở hợp pháp có nhiều hơn một chủ sở hữu thì chỉ cần ý kiến đồng ý của ít nhất một chủ sở hữu.",
+            "(5) Áp dụng đối với trường hợp người chưa thành niên, người hạn chế hành vi dân sự, người không đủ năng lực hành vi dân sự có thay đổi thông tin về cư trú. Việc lấy ý kiến của cha, mẹ hoặc người giám hộ được thực hiện theo các phương thức sau:",
+            "a) Cha, mẹ hoặc người giám hộ ghi rõ nội dung đồng ý và ký, ghi rõ họ tên vào Tờ khai.\nb) Cha, mẹ hoặc người giám hộ xác nhận nội dung đồng ý thông qua ứng dụng định danh quốc gia hoặc các dịch vụ công trực tuyến khác.\nc) Cha, mẹ hoặc người giám hộ có văn bản riêng ghi rõ nội dung đồng ý (văn bản này không phải công chứng, chứng thực).",
+            "(6) Trường hợp nộp trực tiếp người kê khai ký, ghi rõ họ, chữ đệm và tên vào Tờ khai; Trường hợp nộp qua cổng dịch vụ công hoặc ứng dụng định danh quốc gia thì người kê khai không phải ký vào mục này. Trường hợp người kê khai đồng thời là chủ hộ hoặc chủ sở hữu chỗ ở hợp pháp hoặc cha, mẹ, người giám hộ của người thay đổi thì người kê khai không phải ký vào các mục (3), (4), (5), (6).",
+            "(7) Chỉ kê khai thông tin khi công dân đề nghị xác nhận nội dung đồng ý thông qua ứng dụng định danh quốc gia."
+        )
+        notes.forEach { note ->
+            note.split('\n').forEach { line -> y = drawWrapped(canvas, line, LEFT, y, PAGE_WIDTH - LEFT - RIGHT, if (line.startsWith("Ghi chú")) i else p, 9.7f) }
+            y += 3f
+        }
+        drawCenter(canvas, "2", 816f, p)
+    }
+
+    private fun paint(typeface: Typeface, size: Float) = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.typeface = typeface; textSize = size; color = Color.BLACK }
+    private fun drawCenter(canvas: Canvas, text: String, y: Float, paint: Paint) = canvas.drawText(text, (PAGE_WIDTH - paint.measureText(text)) / 2f, y, paint)
+    private fun drawRight(canvas: Canvas, text: String, right: Float, y: Float, paint: Paint) = canvas.drawText(text, right - paint.measureText(text), y, paint)
+    private fun drawCenteredIn(canvas: Canvas, text: String, left: Float, y: Float, width: Float, paint: Paint) = canvas.drawText(text, left + (width - paint.measureText(text)) / 2f, y, paint)
+
+    private fun drawWrapped(canvas: Canvas, text: String, x: Float, startY: Float, maxWidth: Float, paint: Paint, lineHeight: Float): Float {
+        var y = startY
+        text.split('\n').forEach { paragraph ->
+            var line = ""
+            paragraph.split(Regex("\\s+")).forEach { word ->
+                val trial = if (line.isBlank()) word else "$line $word"
+                if (paint.measureText(trial) <= maxWidth) line = trial else {
+                    canvas.drawText(line, x, y, paint); y += lineHeight; line = word
+                }
+            }
+            if (line.isNotBlank()) { canvas.drawText(line, x, y, paint); y += lineHeight }
+        }
+        return y
+    }
+
+    private fun drawDigitBoxes(canvas: Canvas, digits: String, x: Float, y: Float, boxWidth: Float, height: Float, paint: Paint) {
+        val border = Paint().apply { color = Color.BLACK; style = Paint.Style.STROKE; strokeWidth = .6f }
+        repeat(12) { index ->
+            val left = x + index * boxWidth
+            canvas.drawRect(left, y, left + boxWidth, y + height, border)
+            digits.getOrNull(index)?.let { canvas.drawText(it.toString(), left + (boxWidth - paint.measureText(it.toString())) / 2f, y + 12f, paint) }
+        }
+    }
+
+    private fun drawTableGrid(canvas: Canvas, x: Float, y: Float, cols: FloatArray, rowHeight: Float, rows: Int) {
+        val border = Paint().apply { color = Color.BLACK; style = Paint.Style.STROKE; strokeWidth = .65f }
+        val total = cols.sum()
+        canvas.drawRect(x, y, x + total, y + rowHeight * rows, border)
+        var current = x
+        cols.dropLast(1).forEach { current += it; canvas.drawLine(current, y, current, y + rowHeight * rows, border) }
+        repeat(rows - 1) { row -> canvas.drawLine(x, y + rowHeight * (row + 1), x + total, y + rowHeight * (row + 1), border) }
+    }
+
+    private fun drawCellText(canvas: Canvas, text: String, x: Float, y: Float, width: Float, height: Float, paint: Paint) {
+        val fitted = Paint(paint)
+        while (fitted.textSize > 5.8f && fitted.measureText(text) > width - 4f) fitted.textSize -= .25f
+        val value = if (fitted.measureText(text) <= width - 4f) text else text.take(18) + "…"
+        canvas.drawText(value, x + (width - fitted.measureText(value)) / 2f, y + height / 2f + fitted.textSize / 3f, fitted)
+    }
+
+    private fun drawMultilineCentered(canvas: Canvas, text: String, left: Float, top: Float, width: Float, paint: Paint, lineHeight: Float) {
+        text.split('\n').forEachIndexed { index, line -> drawCenteredIn(canvas, line, left, top + index * lineHeight, width, paint) }
+    }
+
+    private fun drawSignature(canvas: Canvas, bitmap: Bitmap, x: Float, y: Float, width: Float, height: Float) {
+        val scale = min(width / bitmap.width, height / bitmap.height)
+        val targetW = bitmap.width * scale
+        val targetH = bitmap.height * scale
+        canvas.drawBitmap(bitmap, null, Rect((x + (width - targetW) / 2f).toInt(), (y + (height - targetH) / 2f).toInt(), (x + (width + targetW) / 2f).toInt(), (y + (height + targetH) / 2f).toInt()), Paint(Paint.ANTI_ALIAS_FLAG))
+    }
+}

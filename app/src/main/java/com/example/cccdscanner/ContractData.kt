@@ -14,19 +14,21 @@ data class PersonData(
     var issueDate: String = "",
     var issuePlace: String = "Bộ Công an",
     var permanentAddress: String = "",
-    var currentAddress: String = ""
+    var currentAddress: String = "",
+    var gender: String = ""
 ) {
     fun toJson() = JSONObject().apply {
         put("name", name); put("birthDate", birthDate); put("citizenId", citizenId)
         put("issueDate", issueDate); put("issuePlace", issuePlace)
         put("permanentAddress", permanentAddress); put("currentAddress", currentAddress)
+        put("gender", gender)
     }
 
     companion object {
         fun fromJson(json: JSONObject) = PersonData(
             json.optString("name"), json.optString("birthDate"), json.optString("citizenId"),
             json.optString("issueDate"), json.optString("issuePlace", "Bộ Công an"),
-            json.optString("permanentAddress"), json.optString("currentAddress")
+            json.optString("permanentAddress"), json.optString("currentAddress"), json.optString("gender")
         )
     }
 }
