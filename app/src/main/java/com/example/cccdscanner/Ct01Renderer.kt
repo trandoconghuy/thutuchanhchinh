@@ -20,12 +20,12 @@ object Ct01Renderer {
     const val A4_PRINT_WIDTH = 2480
     const val A4_PRINT_HEIGHT = 3508
     const val PAGE_COUNT = 2
-    private const val LEFT = 50f
-    private const val RIGHT = 38f
+    private const val LEFT = 85f
+    private const val RIGHT = 57f
 
     private data class Fonts(val regular: Typeface, val bold: Typeface, val italic: Typeface)
 
-    fun renderBitmap(context: Context, data: Ct01Data, declarantSignature: Bitmap?, ownerSignature: Bitmap?, multiplier: Int = 2): Bitmap {
+    fun renderBitmap(context: Context, data: Ct01Data, declarantSignature: Bitmap?, ownerSignature: Bitmap?, headSignature: Bitmap?, guardianSignature: Bitmap?, multiplier: Int = 2): Bitmap {
         val gap = 14 * multiplier
         val bitmap = Bitmap.createBitmap(PAGE_WIDTH * multiplier, PAGE_HEIGHT * PAGE_COUNT * multiplier + gap, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -35,13 +35,13 @@ object Ct01Renderer {
             canvas.save()
             canvas.translate(0f, (index * PAGE_HEIGHT * multiplier + index * gap).toFloat())
             canvas.scale(multiplier.toFloat(), multiplier.toFloat())
-            drawPage(canvas, index + 1, data, declarantSignature, ownerSignature, fonts)
+            drawPage(canvas, index + 1, data, declarantSignature, ownerSignature, headSignature, guardianSignature, fonts)
             canvas.restore()
         }
         return bitmap
     }
 
-    fun renderCombinedA4Bitmap(context: Context, data: Ct01Data, declarantSignature: Bitmap?, ownerSignature: Bitmap?): Bitmap {
+    fun renderCombinedA4Bitmap(context: Context, data: Ct01Data, declarantSignature: Bitmap?, ownerSignature: Bitmap?, headSignature: Bitmap?, guardianSignature: Bitmap?): Bitmap {
         val gap = 32
         val bitmap = Bitmap.createBitmap(A4_PRINT_WIDTH, A4_PRINT_HEIGHT * PAGE_COUNT + gap, Bitmap.Config.RGB_565)
         val canvas = Canvas(bitmap)
@@ -51,18 +51,18 @@ object Ct01Renderer {
             canvas.save()
             canvas.translate(0f, (index * (A4_PRINT_HEIGHT + gap)).toFloat())
             canvas.scale(A4_PRINT_WIDTH / PAGE_WIDTH.toFloat(), A4_PRINT_HEIGHT / PAGE_HEIGHT.toFloat())
-            drawPage(canvas, index + 1, data, declarantSignature, ownerSignature, fonts)
+            drawPage(canvas, index + 1, data, declarantSignature, ownerSignature, headSignature, guardianSignature, fonts)
             canvas.restore()
         }
         return bitmap
     }
 
-    fun createPdf(context: Context, data: Ct01Data, declarantSignature: Bitmap?, ownerSignature: Bitmap?): File {
+    fun createPdf(context: Context, data: Ct01Data, declarantSignature: Bitmap?, ownerSignature: Bitmap?, headSignature: Bitmap?, guardianSignature: Bitmap?): File {
         val document = PdfDocument()
         val fonts = fonts(context)
         repeat(PAGE_COUNT) { index ->
             val page = document.startPage(PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, index + 1).create())
-            drawPage(page.canvas, index + 1, data, declarantSignature, ownerSignature, fonts)
+            drawPage(page.canvas, index + 1, data, declarantSignature, ownerSignature, headSignature, guardianSignature, fonts)
             document.finishPage(page)
         }
         val directory = File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) ?: context.filesDir, "CT01")
@@ -79,21 +79,21 @@ object Ct01Renderer {
         ResourcesCompat.getFont(context, R.font.liberation_serif_italic) ?: Typeface.create(Typeface.SERIF, Typeface.ITALIC)
     )
 
-    private fun drawPage(canvas: Canvas, page: Int, data: Ct01Data, declarantSignature: Bitmap?, ownerSignature: Bitmap?, fonts: Fonts) {
+    private fun drawPage(canvas: Canvas, page: Int, data: Ct01Data, declarantSignature: Bitmap?, ownerSignature: Bitmap?, headSignature: Bitmap?, guardianSignature: Bitmap?, fonts: Fonts) {
         canvas.drawRect(0f, 0f, PAGE_WIDTH.toFloat(), PAGE_HEIGHT.toFloat(), Paint().apply { color = Color.WHITE })
-        if (page == 1) drawForm(canvas, data, declarantSignature, ownerSignature, fonts) else drawNotes(canvas, fonts)
+        if (page == 1) drawForm(canvas, data, declarantSignature, ownerSignature, headSignature, guardianSignature, fonts) else drawNotes(canvas, fonts)
     }
 
-    private fun drawForm(canvas: Canvas, data: Ct01Data, declarantSignature: Bitmap?, ownerSignature: Bitmap?, fonts: Fonts) {
+    private fun drawForm(canvas: Canvas, data: Ct01Data, declarantSignature: Bitmap?, ownerSignature: Bitmap?, headSignature: Bitmap?, guardianSignature: Bitmap?, fonts: Fonts) {
         val p = paint(fonts.regular, 10f)
         val b = paint(fonts.bold, 10f)
         val small = paint(fonts.regular, 8f)
         val smallBold = paint(fonts.bold, 8f)
         val width = PAGE_WIDTH - LEFT - RIGHT
-        var y = 31f
-        drawRight(canvas, "Mẫu CT01 ban hành kèm theo Thông tư số 53/2025/TT-BCA", PAGE_WIDTH - RIGHT, y, small)
+        var y = 57f
+        drawRight(canvas, "Mẫu CT01 ban hành kèm theo Thông tư số 116/2026/TT-BCA", PAGE_WIDTH - RIGHT, y, small)
         y += 11f
-        drawRight(canvas, "ngày 01/7/2025 của Bộ trưởng Bộ Công an", PAGE_WIDTH - RIGHT, y, small)
+        drawRight(canvas, "ngày 29 tháng 6 năm 2026 của Bộ trưởng Bộ Công an", PAGE_WIDTH - RIGHT, y, small)
         y += 24f
         drawCenter(canvas, "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", y, b)
         y += 14f
@@ -110,48 +110,58 @@ object Ct01Renderer {
         drawDigitBoxes(canvas, data.citizenId, LEFT + 145f, y - 11f, 15f, 17f, smallBold)
         y += 23f
         y = drawWrapped(canvas, "5. Số điện thoại liên hệ: ${data.phone}      6. Email: ${data.email}", LEFT, y, width, p, 14f)
-        y = drawWrapped(canvas, "7. Họ, chữ đệm và tên chủ hộ: ${data.headName}      8. Mối quan hệ với chủ hộ: ${data.relationshipToHead}", LEFT, y, width, p, 14f)
+        y = drawWrapped(canvas, "7. Họ, chữ đệm và tên chủ hộ(2): ${data.headName}      8. Mối quan hệ với chủ hộ: ${data.relationshipToHead}", LEFT, y, width, p, 14f)
         canvas.drawText("9. Số định danh cá nhân của chủ hộ:", LEFT, y, p)
         drawDigitBoxes(canvas, data.headCitizenId, LEFT + 195f, y - 11f, 15f, 17f, smallBold)
         y += 23f
-        y = drawWrapped(canvas, "10. Nội dung đề nghị(2): ${data.requestContent}", LEFT, y, width, p, 14f)
+        y = drawWrapped(canvas, "10. Nội dung đề nghị(3): ${data.requestContent}", LEFT, y, width, p, 14f)
         y += 2f
         canvas.drawText("11. Những thành viên trong hộ gia đình cùng thay đổi:", LEFT, y, p)
         y += 8f
 
         val tableTop = y
-        val rowHeights = 23f
-        val cols = floatArrayOf(24f, 145f, 82f, 48f, 104f, 104f)
+        val headerHeight = 34f
+        val rowHeight = 19f
+        val cols = floatArrayOf(23f, 132f, 77f, 37f, 107f, 77f)
         val headers = arrayOf("TT", "Họ, chữ đệm và tên", "Ngày sinh", "Giới tính", "Số định danh cá nhân", "Quan hệ với chủ hộ")
-        drawTableGrid(canvas, LEFT, tableTop, cols, rowHeights, 8)
+        drawTableGrid(canvas, LEFT, tableTop, cols, headerHeight, rowHeight, 9)
         var x = LEFT
         headers.forEachIndexed { index, text ->
-            drawCellText(canvas, text, x, tableTop, cols[index], rowHeights, smallBold)
+            drawHeaderCell(canvas, text, x, tableTop, cols[index], headerHeight, smallBold)
             x += cols[index]
         }
-        repeat(7) { row ->
+        repeat(9) { row ->
             val member = data.members.getOrNull(row)
             val values = if (member == null) arrayOf("${row + 1}", "", "", "", "", "") else arrayOf(
                 "${row + 1}", member.name, member.birthDate, member.gender, member.citizenId, member.relationship
             )
             x = LEFT
             values.forEachIndexed { index, text ->
-                drawCellText(canvas, text, x, tableTop + rowHeights * (row + 1), cols[index], rowHeights, small)
+                drawCellText(canvas, text, x, tableTop + headerHeight + rowHeight * row, cols[index], rowHeight, small)
                 x += cols[index]
             }
         }
-        y = tableTop + rowHeights * 8 + 12f
+        y = tableTop + headerHeight + rowHeight * 9 + 14f
 
         val signatureWidth = width / 4f
         val signatureTop = y
-        val titles = arrayOf("Ý KIẾN CỦA\nCHỦ HỘ(3)", "Ý KIẾN CỦA CHỦ SỞ HỮU\nCHỖ Ở HỢP PHÁP(4)", "Ý KIẾN CỦA CHA, MẸ\nHOẶC NGƯỜI GIÁM HỘ(5)", "NGƯỜI KÊ KHAI(6)")
+        val titles = arrayOf("Ý KIẾN CỦA\nCHỦ HỘ(4)", "Ý KIẾN CỦA CHỦ SỞ HỮU\nCHỖ Ở HỢP PHÁP(5)(8)", "Ý KIẾN CỦA CHA HOẶC MẸ\nHOẶC NGƯỜI GIÁM HỘ(6)(8)", "NGƯỜI KÊ KHAI(7)")
         titles.forEachIndexed { index, text -> drawMultilineCentered(canvas, text, LEFT + index * signatureWidth, signatureTop, signatureWidth, smallBold, 10f) }
-        drawCenteredIn(canvas, "${data.signingPlace}, ${data.signingDate}", LEFT + signatureWidth, signatureTop + 28f, signatureWidth, small)
+        val dateParts = data.signingDate.split('/')
+        val dateText = if (dateParts.size == 3) "${data.signingPlace}, ngày ${dateParts[0]} tháng ${dateParts[1]} năm ${dateParts[2]}" else "${data.signingPlace}, ${data.signingDate}"
+        repeat(4) { index -> drawWrappedCentered(canvas, dateText, LEFT + signatureWidth * index, signatureTop + 22f, signatureWidth, paint(fonts.italic, 6.2f), 7f, 2) }
+        drawWrappedCentered(canvas, data.headConsent, LEFT, signatureTop + 38f, signatureWidth, paint(fonts.regular, 6.5f), 8f, 2)
+        drawCenteredIn(canvas, data.headName, LEFT, signatureTop + 111f, signatureWidth, smallBold)
+        drawWrappedCentered(canvas, data.ownerConsent, LEFT + signatureWidth, signatureTop + 38f, signatureWidth, paint(fonts.regular, 6.5f), 8f, 2)
         drawCenteredIn(canvas, data.legalOwnerName, LEFT + signatureWidth, signatureTop + 99f, signatureWidth, smallBold)
         drawCenteredIn(canvas, data.legalOwnerCitizenId, LEFT + signatureWidth, signatureTop + 111f, signatureWidth, small)
-        drawCenteredIn(canvas, "${data.signingPlace}, ${data.signingDate}", LEFT + signatureWidth * 3, signatureTop + 28f, signatureWidth, small)
+        drawWrappedCentered(canvas, data.guardianConsent, LEFT + signatureWidth * 2, signatureTop + 38f, signatureWidth, paint(fonts.regular, 6.5f), 8f, 2)
+        drawCenteredIn(canvas, data.guardianName, LEFT + signatureWidth * 2, signatureTop + 99f, signatureWidth, smallBold)
+        drawCenteredIn(canvas, data.guardianCitizenId, LEFT + signatureWidth * 2, signatureTop + 111f, signatureWidth, small)
         drawCenteredIn(canvas, data.declarantName, LEFT + signatureWidth * 3, signatureTop + 111f, signatureWidth, smallBold)
-        ownerSignature?.let { drawSignature(canvas, it, LEFT + signatureWidth + 13f, signatureTop + 42f, signatureWidth - 26f, 50f) }
+        headSignature?.let { drawSignature(canvas, it, LEFT + 13f, signatureTop + 42f, signatureWidth - 26f, 50f) }
+        ownerSignature?.let { drawSignature(canvas, it, LEFT + signatureWidth + 13f, signatureTop + 47f, signatureWidth - 26f, 44f) }
+        guardianSignature?.let { drawSignature(canvas, it, LEFT + signatureWidth * 2 + 13f, signatureTop + 42f, signatureWidth - 26f, 50f) }
         declarantSignature?.let { drawSignature(canvas, it, LEFT + signatureWidth * 3 + 13f, signatureTop + 42f, signatureWidth - 26f, 50f) }
     }
 
@@ -159,28 +169,27 @@ object Ct01Renderer {
         val p = paint(fonts.regular, 7.7f)
         val b = paint(fonts.bold, 9f)
         val i = paint(fonts.italic, 7.5f)
-        var y = 45f
+        var y = 57f
         canvas.drawText("Chú thích:", LEFT, y, b)
         y += 16f
         val notes = listOf(
             "(1) Cơ quan đăng ký cư trú.",
-            "(2) Ghi rõ ràng, cụ thể nội dung đề nghị. Ví dụ: ghi chi tiết thông tin nơi đề nghị đăng ký thường trú hoặc nơi đề nghị đăng ký tạm trú hoặc nội dung đề nghị xác nhận thông tin về cư trú...",
-            "(3) Áp dụng đối với các trường hợp quy định tại khoản 2, khoản 3, khoản 5, khoản 6 Điều 20; khoản 1 Điều 25; điểm a khoản 1 Điều 26 Luật Cư trú (trường hợp người đứng đầu cơ sở trợ giúp xã hội quyết định chủ hộ). Việc lấy ý kiến của chủ hộ được thực hiện theo các phương thức sau:",
+            "(2) Trường hợp đăng ký thường trú, đăng ký tạm trú, tách hộ ghi thông tin chủ hộ gia đình mới.",
+            "(3) Ghi rõ ràng, cụ thể nội dung đề nghị. Ví dụ: ghi chi tiết thông tin nơi đề nghị đăng ký thường trú hoặc nơi đề nghị đăng ký tạm trú hoặc nội dung đề nghị xác nhận thông tin về cư trú..... Trường hợp đăng ký thường trú, đăng ký tạm trú, gia hạn tạm trú, tách hộ mà địa giới hành chính đã có sự thay đổi theo quyết định của cơ quan có thẩm quyền thì ghi thông tin theo địa giới hành chính mới, đồng thời ghi chú địa giới hành chính theo giấy tờ, tài liệu chứng minh chỗ ở hợp pháp.",
+            "(4) Áp dụng đối với các trường hợp quy định tại khoản 2 (Trừ trường hợp người dưới 6 tuổi đăng ký về với cha, mẹ, người giám hộ), khoản 3, khoản 5, khoản 6 Điều 20; khoản 1 Điều 25; điểm a khoản 1 Điều 26 Luật Cư trú và các trường hợp khác theo quy định pháp luật. Việc lấy ý kiến của chủ hộ được thực hiện theo các phương thức sau:",
             "a) Chủ hộ ghi rõ nội dung đồng ý và ký, ghi rõ họ tên vào Tờ khai.\nb) Chủ hộ xác nhận nội dung đồng ý thông qua ứng dụng định danh quốc gia hoặc các dịch vụ công trực tuyến khác.\nc) Chủ hộ có văn bản riêng ghi rõ nội dung đồng ý (văn bản này không phải công chứng, chứng thực).",
-            "(4) Áp dụng đối với các trường hợp quy định tại khoản 2, khoản 3, khoản 4, khoản 5, khoản 6 Điều 20; khoản 1 Điều 25 Luật Cư trú; điểm a khoản 1 Điều 26 Luật Cư trú. Việc lấy ý kiến của chủ sở hữu chỗ ở hợp pháp được thực hiện theo các phương thức sau:",
-            "a) Chủ sở hữu chỗ ở hợp pháp ghi rõ nội dung đồng ý và ký, ghi rõ họ tên vào Tờ khai.\nb) Chủ sở hữu chỗ ở hợp pháp xác nhận nội dung đồng ý thông qua ứng dụng định danh quốc gia hoặc các dịch vụ công trực tuyến khác.\nc) Chủ sở hữu chỗ ở hợp pháp có văn bản riêng ghi rõ nội dung đồng ý (văn bản này không phải công chứng, chứng thực).",
-            "Ghi chú: Trường hợp chủ sở hữu chỗ ở hợp pháp gồm nhiều cá nhân, tổ chức thì phải có ý kiến đồng ý của tất cả các đồng sở hữu trừ trường hợp đã có thỏa thuận về việc cử đại diện có ý kiến đồng ý; Trường hợp chủ sở hữu chỗ ở hợp pháp xác nhận nội dung đồng ý thông qua ứng dụng định danh quốc gia thì công dân phải kê khai thông tin về họ, chữ đệm, tên và số ĐDCN của chủ sở hữu chỗ ở hợp pháp.",
-            "Trường hợp đăng ký thường trú theo quy định tại điểm a Khoản 2 Điều 20 Luật Cư trú mà chỗ ở hợp pháp có nhiều hơn một chủ sở hữu thì chỉ cần ý kiến đồng ý của ít nhất một chủ sở hữu.",
-            "(5) Áp dụng đối với trường hợp người chưa thành niên, người hạn chế hành vi dân sự, người không đủ năng lực hành vi dân sự có thay đổi thông tin về cư trú. Việc lấy ý kiến của cha, mẹ hoặc người giám hộ được thực hiện theo các phương thức sau:",
-            "a) Cha, mẹ hoặc người giám hộ ghi rõ nội dung đồng ý và ký, ghi rõ họ tên vào Tờ khai.\nb) Cha, mẹ hoặc người giám hộ xác nhận nội dung đồng ý thông qua ứng dụng định danh quốc gia hoặc các dịch vụ công trực tuyến khác.\nc) Cha, mẹ hoặc người giám hộ có văn bản riêng ghi rõ nội dung đồng ý (văn bản này không phải công chứng, chứng thực).",
-            "(6) Trường hợp nộp trực tiếp người kê khai ký, ghi rõ họ, chữ đệm và tên vào Tờ khai; Trường hợp nộp qua cổng dịch vụ công hoặc ứng dụng định danh quốc gia thì người kê khai không phải ký vào mục này. Trường hợp người kê khai đồng thời là chủ hộ hoặc chủ sở hữu chỗ ở hợp pháp hoặc cha, mẹ, người giám hộ của người thay đổi thì người kê khai không phải ký vào các mục (3), (4), (5), (6).",
-            "(7) Chỉ kê khai thông tin khi công dân đề nghị xác nhận nội dung đồng ý thông qua ứng dụng định danh quốc gia."
+            "(5) Áp dụng đối với các trường hợp quy định tại khoản 2 (Trừ trường hợp người dưới 6 tuổi đăng ký về với cha, mẹ, người giám hộ), khoản 3, khoản 4, khoản 5, khoản 6 Điều 20; khoản 1 Điều 25 Luật Cư trú; điểm a khoản 1 Điều 26 Luật Cư trú (trường hợp người đứng đầu cơ sở trợ giúp xã hội quyết định chủ hộ) và các trường hợp khác theo quy định pháp luật. Việc lấy ý kiến của chủ sở hữu chỗ ở hợp pháp được thực hiện theo các phương thức sau:",
+            "a) Chủ sở hữu chỗ ở hợp pháp ghi rõ nội dung đồng ý và ký, ghi rõ họ tên vào Tờ khai.\nb) Chủ sở hữu chỗ ở hợp pháp xác nhận nội dung đồng ý thông qua ứng dụng định danh quốc gia (VNeID) hoặc các dịch vụ công trực tuyến khác.\nc) Chủ sở hữu chỗ ở hợp pháp có văn bản riêng ghi rõ nội dung đồng ý (văn bản này không phải công chứng, chứng thực).",
+            "Ghi chú: Trường hợp chủ sở hữu hợp chỗ ở hợp pháp gồm nhiều cá nhân, tổ chức thì phải có ý kiến đồng ý của tất cả các đồng sở hữu, tổ chức trừ trường hợp đã có thỏa thuận về việc cử đại diện có ý kiến đồng ý hoặc trường hợp có quy định khác; Trường hợp chủ sở hữu chỗ ở hợp pháp xác nhận nội dung đồng ý thông qua ứng dụng định danh quốc gia thì công dân phải kê khai thông tin về họ, chữ đệm, tên và số ĐDCN của chủ sở hữu chỗ ở hợp pháp. Trường hợp đăng ký thường trú theo quy định tại điểm a Khoản 2 Điều 20 Luật Cư trú mà chỗ ở hợp pháp có nhiều hơn một chủ sở hữu thì chỉ cần ý kiến đồng ý của ít nhất một chủ sở hữu.",
+            "(6) Áp dụng đối với trường hợp người chưa thành niên, người hạn chế hành vi dân sự, người không đủ năng lực hành vi dân sự có thay đổi thông tin về cư trú. Việc lấy ý kiến của cha, mẹ hoặc người giám hộ được thực hiện theo các phương thức sau:",
+            "a) Cha, mẹ hoặc người giám hộ ghi rõ nội dung đồng ý và ký, ghi rõ họ tên vào Tờ khai.\nb) Cha, mẹ hoặc người giám hộ xác nhận nội dung đồng ý thông qua ứng dụng định danh quốc gia (VNeID) hoặc các dịch vụ công trực tuyến khác.\nc) Cha, mẹ hoặc người giám hộ có văn bản riêng ghi rõ nội dung đồng ý (văn bản này không phải công chứng, chứng thực).",
+            "(7) Trường hợp nộp trực tiếp người kê khai ký, ghi rõ họ, chữ đệm và tên vào Tờ khai; Trường hợp nộp qua cổng dịch vụ công hoặc ứng dụng định danh quốc gia thì người kê khai không phải ký vào mục này. Trường hợp người kê khai đồng thời là chủ hộ hoặc chủ sở hữu chỗ ở hợp pháp hoặc cha, mẹ, người giám hộ của người thay đổi thì người kê khai không phải ký vào các mục (4), (5), (6), (7).",
+            "(8) Chỉ kê khai thông tin khi công dân đề nghị xác nhận nội dung đồng ý thông qua ứng dụng định danh quốc gia (VNeID)."
         )
         notes.forEach { note ->
             note.split('\n').forEach { line -> y = drawWrapped(canvas, line, LEFT, y, PAGE_WIDTH - LEFT - RIGHT, if (line.startsWith("Ghi chú")) i else p, 9.7f) }
             y += 3f
         }
-        drawCenter(canvas, "2", 816f, p)
     }
 
     private fun paint(typeface: Typeface, size: Float) = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.typeface = typeface; textSize = size; color = Color.BLACK }
@@ -212,13 +221,15 @@ object Ct01Renderer {
         }
     }
 
-    private fun drawTableGrid(canvas: Canvas, x: Float, y: Float, cols: FloatArray, rowHeight: Float, rows: Int) {
+    private fun drawTableGrid(canvas: Canvas, x: Float, y: Float, cols: FloatArray, headerHeight: Float, rowHeight: Float, dataRows: Int) {
         val border = Paint().apply { color = Color.BLACK; style = Paint.Style.STROKE; strokeWidth = .65f }
         val total = cols.sum()
-        canvas.drawRect(x, y, x + total, y + rowHeight * rows, border)
+        val totalHeight = headerHeight + rowHeight * dataRows
+        canvas.drawRect(x, y, x + total, y + totalHeight, border)
         var current = x
-        cols.dropLast(1).forEach { current += it; canvas.drawLine(current, y, current, y + rowHeight * rows, border) }
-        repeat(rows - 1) { row -> canvas.drawLine(x, y + rowHeight * (row + 1), x + total, y + rowHeight * (row + 1), border) }
+        cols.dropLast(1).forEach { current += it; canvas.drawLine(current, y, current, y + totalHeight, border) }
+        canvas.drawLine(x, y + headerHeight, x + total, y + headerHeight, border)
+        repeat(dataRows - 1) { row -> canvas.drawLine(x, y + headerHeight + rowHeight * (row + 1), x + total, y + headerHeight + rowHeight * (row + 1), border) }
     }
 
     private fun drawCellText(canvas: Canvas, text: String, x: Float, y: Float, width: Float, height: Float, paint: Paint) {
@@ -228,8 +239,37 @@ object Ct01Renderer {
         canvas.drawText(value, x + (width - fitted.measureText(value)) / 2f, y + height / 2f + fitted.textSize / 3f, fitted)
     }
 
+    private fun drawHeaderCell(canvas: Canvas, text: String, x: Float, y: Float, width: Float, height: Float, paint: Paint) {
+        val fitted = Paint(paint).apply { textSize = 6.8f }
+        val lines = mutableListOf<String>()
+        var line = ""
+        text.split(Regex("\\s+")).forEach { word ->
+            val trial = if (line.isBlank()) word else "$line $word"
+            if (fitted.measureText(trial) <= width - 4f) line = trial else { if (line.isNotBlank()) lines += line; line = word }
+        }
+        if (line.isNotBlank()) lines += line
+        val lineHeight = 8f
+        val start = y + (height - lines.size * lineHeight) / 2f + fitted.textSize
+        lines.forEachIndexed { index, value -> canvas.drawText(value, x + (width - fitted.measureText(value)) / 2f, start + index * lineHeight, fitted) }
+    }
+
     private fun drawMultilineCentered(canvas: Canvas, text: String, left: Float, top: Float, width: Float, paint: Paint, lineHeight: Float) {
         text.split('\n').forEachIndexed { index, line -> drawCenteredIn(canvas, line, left, top + index * lineHeight, width, paint) }
+    }
+
+    private fun drawWrappedCentered(canvas: Canvas, text: String, left: Float, top: Float, width: Float, paint: Paint, lineHeight: Float, maxLines: Int) {
+        val lines = mutableListOf<String>()
+        var line = ""
+        for (word in text.split(Regex("\\s+"))) {
+            val trial = if (line.isBlank()) word else "$line $word"
+            if (paint.measureText(trial) <= width - 6f) line = trial else {
+                if (line.isNotBlank()) lines += line
+                line = word
+                if (lines.size == maxLines - 1) break
+            }
+        }
+        if (line.isNotBlank() && lines.size < maxLines) lines += line
+        lines.forEachIndexed { index, value -> drawCenteredIn(canvas, value, left, top + index * lineHeight, width, paint) }
     }
 
     private fun drawSignature(canvas: Canvas, bitmap: Bitmap, x: Float, y: Float, width: Float, height: Float) {

@@ -117,6 +117,8 @@ class MainActivity : AppCompatActivity() {
     private var landlordSignature: Bitmap? = null
     private var ct01DeclarantSignature: Bitmap? = null
     private var ct01OwnerSignature: Bitmap? = null
+    private var ct01HeadSignature: Bitmap? = null
+    private var ct01GuardianSignature: Bitmap? = null
     private var scannerDialog: Dialog? = null
     private var cameraProvider: ProcessCameraProvider? = null
     private var boundCamera: Camera? = null
@@ -1096,8 +1098,8 @@ class MainActivity : AppCompatActivity() {
         page.addView(templateCard(
             code = "CT01",
             title = "CT01",
-            note = "Dành cho đăng ký tạm trú",
-            status = "Trong danh mục",
+            note = "Tờ khai thay đổi thông tin cư trú · Mẫu 116/2026",
+            status = "Cập nhật 29/06/2026",
             actionLabel = "Chọn CT01",
             accent = blue
         ) {
@@ -1201,17 +1203,21 @@ class MainActivity : AppCompatActivity() {
             phone = keepPhone,
             email = keepEmail,
             headName = vietnameseTitleCase(contract.landlord.name),
-            relationshipToHead = "Người thuê",
+            relationshipToHead = "Ở thuê",
             headCitizenId = contract.landlord.citizenId,
             requestContent = "Đăng ký tạm trú tại: ${contract.place}",
+            headConsent = "Đồng ý cho đăng ký tạm trú tại địa chỉ nêu trên",
             legalOwnerName = vietnameseTitleCase(contract.landlord.name),
             legalOwnerCitizenId = contract.landlord.citizenId,
+            ownerConsent = "Đồng ý cho đăng ký tạm trú tại địa chỉ nêu trên",
             signingPlace = "Thành phố Hồ Chí Minh",
-            signingDate = contract.date
+            signingDate = java.text.SimpleDateFormat("dd/MM/yyyy", Locale("vi", "VN")).format(java.util.Date())
         )
         ct01Fields.clear()
         ct01DeclarantSignature = null
         ct01OwnerSignature = null
+        ct01HeadSignature = null
+        ct01GuardianSignature = null
     }
 
     private fun showCt01Form() {
@@ -1228,25 +1234,25 @@ class MainActivity : AppCompatActivity() {
 
         sectionTitle(body, "Người kê khai", "Tự động lấy từ mã QR CCCD vừa quét")
         ct01Field(body, "declarantName", "Họ, chữ đệm và tên khai sinh", ct01Data.declarantName)
-        ct01Field(body, "birthDate", "Ngày, tháng, năm sinh", ct01Data.birthDate)
+        ct01DateField(body, "birthDate", "Ngày, tháng, năm sinh", ct01Data.birthDate)
         ct01SmartField(body, "gender", "Giới tính", ct01Data.gender) {
-            val choices = arrayOf("Nam", "Nữ", "Khác")
+            val choices = arrayOf("Nam", "Nữ")
             AlertDialog.Builder(this).setTitle("Chọn giới tính").setItems(choices) { _, which -> ct01Fields["gender"]?.setText(choices[which]) }.show()
         }
         ct01Field(body, "citizenId", "Số định danh cá nhân", ct01Data.citizenId)
         ct01Field(body, "phone", "Số điện thoại liên hệ", ct01Data.phone)
-        ct01Field(body, "email", "Email", ct01Data.email)
+        ct01Field(body, "email", "Email (không bắt buộc)", ct01Data.email)
 
-        sectionTitle(body, "Chủ hộ và nội dung đề nghị", "Có thể điều chỉnh theo trường hợp thực tế")
-        ct01Field(body, "headName", "Họ, chữ đệm và tên chủ hộ", ct01Data.headName)
+        sectionTitle(body, "Chủ hộ và nội dung đề nghị", "Đăng ký cư trú hoặc tách hộ: ghi chủ hộ gia đình mới")
+        ct01Field(body, "headName", "Họ, chữ đệm và tên chủ hộ gia đình mới", ct01Data.headName)
         ct01SmartField(body, "relationshipToHead", "Mối quan hệ với chủ hộ", ct01Data.relationshipToHead) {
-            val choices = arrayOf("Chủ hộ", "Vợ", "Chồng", "Con", "Cha", "Mẹ", "Người thuê", "Cùng ở thuê", "Khác")
+            val choices = arrayOf("Chủ hộ", "Vợ", "Chồng", "Con", "Cha", "Mẹ", "Cháu", "Ở nhờ", "Ở mượn", "Ở thuê", "Cùng ở nhờ", "Cùng ở mượn", "Cùng ở thuê", "Khác")
             AlertDialog.Builder(this).setTitle("Chọn quan hệ với chủ hộ").setItems(choices) { _, which -> ct01Fields["relationshipToHead"]?.setText(choices[which]) }.show()
         }
         ct01Field(body, "headCitizenId", "Số định danh cá nhân của chủ hộ", ct01Data.headCitizenId)
         ct01Field(body, "requestContent", "Nội dung đề nghị", ct01Data.requestContent, true)
 
-        sectionTitle(body, "Thành viên cùng thay đổi", "Chọn tối đa 07 người từ thư viện người thuê")
+        sectionTitle(body, "Thành viên cùng thay đổi", "Chọn tối đa 09 người từ thư viện người thuê")
         val summary = if (ct01Data.members.isEmpty()) "Chưa chọn thành viên" else ct01Data.members.joinToString("\n") { "• ${it.name} · ${it.citizenId.takeLast(4)}" }
         body.addView(label(summary, 12f, if (ct01Data.members.isEmpty()) Color.rgb(118, 130, 150) else navy, false).apply {
             setPadding(dp(13), dp(11), dp(13), dp(11)); background = rounded(Color.rgb(245, 248, 253), 10f, border)
@@ -1254,12 +1260,26 @@ class MainActivity : AppCompatActivity() {
         body.addView(actionButton("Chọn thành viên từ thư viện", blue) {
             collectCt01Form(); showCt01MemberPicker()
         }, margins(dp(46), bottom = 8))
+        if (ct01Data.members.isNotEmpty()) {
+            body.addView(actionButton("Kiểm tra giới tính và quan hệ thành viên", Color.WHITE, blue) {
+                collectCt01Form(); showCt01MemberEditor()
+            }, margins(dp(46), bottom = 8))
+        }
 
         sectionTitle(body, "Xác nhận và ký", "Thông tin chủ sở hữu chỗ ở hợp pháp")
+        ct01SmartField(body, "consentMethod", "Phương thức xác nhận đồng ý", ct01Data.consentMethod) {
+            val choices = arrayOf("Ký trực tiếp trên tờ khai", "Xác nhận qua VNeID", "Văn bản đồng ý riêng")
+            AlertDialog.Builder(this).setTitle("Chọn phương thức xác nhận").setItems(choices) { _, which -> ct01Fields["consentMethod"]?.setText(choices[which]) }.show()
+        }
+        ct01Field(body, "headConsent", "Ý kiến của chủ hộ", ct01Data.headConsent, true)
         ct01Field(body, "legalOwnerName", "Họ và tên chủ sở hữu", ct01Data.legalOwnerName)
         ct01Field(body, "legalOwnerCitizenId", "Số định danh cá nhân chủ sở hữu", ct01Data.legalOwnerCitizenId)
+        ct01Field(body, "ownerConsent", "Ý kiến của chủ sở hữu chỗ ở hợp pháp", ct01Data.ownerConsent, true)
+        ct01Field(body, "guardianName", "Họ tên cha, mẹ hoặc người giám hộ (nếu áp dụng)", ct01Data.guardianName)
+        ct01Field(body, "guardianCitizenId", "Số định danh cha, mẹ hoặc người giám hộ", ct01Data.guardianCitizenId)
+        ct01Field(body, "guardianConsent", "Ý kiến của cha, mẹ hoặc người giám hộ", ct01Data.guardianConsent, true)
         ct01Field(body, "signingPlace", "Địa điểm ký", ct01Data.signingPlace)
-        ct01Field(body, "signingDate", "Ngày ký", ct01Data.signingDate)
+        ct01DateField(body, "signingDate", "Ngày ký", ct01Data.signingDate)
         showCt01Shell("Nhập thông tin CT01", ScrollView(this).apply { addView(body) }, "Nhập")
     }
 
@@ -1269,6 +1289,14 @@ class MainActivity : AppCompatActivity() {
             setText(value); textSize = 15f; setTextColor(Color.rgb(21, 28, 41)); setPadding(dp(13), dp(8), dp(13), dp(8))
             background = rounded(Color.WHITE, 8f, border); minHeight = dp(if (multiLine) 58 else 46)
             maxLines = if (multiLine) 4 else 1; isSingleLine = !multiLine
+            when (key) {
+                "citizenId", "headCitizenId", "legalOwnerCitizenId", "guardianCitizenId" -> {
+                    inputType = android.text.InputType.TYPE_CLASS_NUMBER
+                    filters = arrayOf(android.text.InputFilter.LengthFilter(12))
+                }
+                "phone" -> inputType = android.text.InputType.TYPE_CLASS_PHONE
+                "email" -> inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+            }
         }
         ct01Fields[key] = input
         parent.addView(input, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -1287,6 +1315,20 @@ class MainActivity : AppCompatActivity() {
         parent.addView(input, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     }
 
+    private fun ct01DateField(parent: LinearLayout, key: String, caption: String, value: String) {
+        ct01SmartField(parent, key, caption, value) {
+            val target = ct01Fields[key] ?: return@ct01SmartField
+            val parts = target.text.toString().split('/').mapNotNull { it.toIntOrNull() }
+            val now = Calendar.getInstance()
+            val day = parts.getOrNull(0)?.coerceIn(1, 31) ?: now.get(Calendar.DAY_OF_MONTH)
+            val month = parts.getOrNull(1)?.coerceIn(1, 12)?.minus(1) ?: now.get(Calendar.MONTH)
+            val year = parts.getOrNull(2)?.coerceIn(1900, 2200) ?: now.get(Calendar.YEAR)
+            DatePickerDialog(this, { _, selectedYear, selectedMonth, selectedDay ->
+                target.setText(String.format(Locale.US, "%02d/%02d/%04d", selectedDay, selectedMonth + 1, selectedYear))
+            }, year, month, day).show()
+        }
+    }
+
     private fun collectCt01Form() {
         fun value(key: String, old: String) = ct01Fields[key]?.text?.toString()?.trim()?.ifBlank { old } ?: old
         ct01Data.authority = value("authority", ct01Data.authority)
@@ -1300,8 +1342,14 @@ class MainActivity : AppCompatActivity() {
         ct01Data.relationshipToHead = value("relationshipToHead", ct01Data.relationshipToHead)
         ct01Data.headCitizenId = value("headCitizenId", ct01Data.headCitizenId)
         ct01Data.requestContent = value("requestContent", ct01Data.requestContent)
+        ct01Data.consentMethod = value("consentMethod", ct01Data.consentMethod)
+        ct01Data.headConsent = value("headConsent", ct01Data.headConsent)
         ct01Data.legalOwnerName = value("legalOwnerName", ct01Data.legalOwnerName)
         ct01Data.legalOwnerCitizenId = value("legalOwnerCitizenId", ct01Data.legalOwnerCitizenId)
+        ct01Data.ownerConsent = value("ownerConsent", ct01Data.ownerConsent)
+        ct01Data.guardianName = value("guardianName", ct01Data.guardianName)
+        ct01Data.guardianCitizenId = value("guardianCitizenId", ct01Data.guardianCitizenId)
+        ct01Data.guardianConsent = value("guardianConsent", ct01Data.guardianConsent)
         ct01Data.signingPlace = value("signingPlace", ct01Data.signingPlace)
         ct01Data.signingDate = value("signingDate", ct01Data.signingDate)
     }
@@ -1316,12 +1364,34 @@ class MainActivity : AppCompatActivity() {
             .setMultiChoiceItems(labels, selected) { _, which, checked -> selected[which] = checked }
             .setPositiveButton("Áp dụng") { _, _ ->
                 val chosen = tenants.filterIndexed { index, _ -> selected[index] }
-                ct01Data.members = chosen.take(7).map { Ct01Member(it.name, it.birthDate, it.gender, it.citizenId, "Cùng ở thuê") }.toMutableList()
-                if (chosen.size > 7) toast("CT01 chỉ hiển thị tối đa 07 thành viên trên một tờ khai")
+                ct01Data.members = chosen.take(9).map { Ct01Member(it.name, it.birthDate, it.gender, it.citizenId, "Cùng ở thuê") }.toMutableList()
+                if (chosen.size > 9) toast("CT01 chỉ hiển thị tối đa 09 thành viên trên một tờ khai")
                 showCt01Form()
             }
             .setNegativeButton("Hủy", null)
             .show()
+    }
+
+    private fun showCt01MemberEditor() {
+        val labels = ct01Data.members.map { "${it.name} · ${it.gender.ifBlank { "Chưa chọn giới tính" }} · ${it.relationship}" }.toTypedArray()
+        AlertDialog.Builder(this).setTitle("Chọn thành viên cần chỉnh").setItems(labels) { _, index ->
+            val member = ct01Data.members[index]
+            val actions = arrayOf("Chọn giới tính", "Chọn quan hệ với chủ hộ", "Xóa khỏi danh sách")
+            AlertDialog.Builder(this).setTitle(member.name).setItems(actions) { _, action ->
+                when (action) {
+                    0 -> AlertDialog.Builder(this).setTitle("Giới tính").setItems(arrayOf("Nam", "Nữ")) { _, choice ->
+                        member.gender = if (choice == 0) "Nam" else "Nữ"; showCt01Form()
+                    }.show()
+                    1 -> {
+                        val relations = arrayOf("Vợ", "Chồng", "Con", "Cha", "Mẹ", "Cháu", "Ở nhờ", "Ở mượn", "Ở thuê", "Cùng ở nhờ", "Cùng ở mượn", "Cùng ở thuê", "Khác")
+                        AlertDialog.Builder(this).setTitle("Quan hệ với chủ hộ").setItems(relations) { _, choice ->
+                            member.relationship = relations[choice]; showCt01Form()
+                        }.show()
+                    }
+                    2 -> { ct01Data.members.removeAt(index); showCt01Form() }
+                }
+            }.show()
+        }.setNegativeButton("Đóng", null).show()
     }
 
     private fun showCt01Preview() {
@@ -1331,7 +1401,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER; background = rounded(Color.WHITE, 11f, border); setPadding(dp(8), dp(8), dp(8), dp(8))
         }, margins(dp(40), bottom = 8))
         box.addView(ZoomableImageView(this).apply {
-            setImageBitmap(Ct01Renderer.renderBitmap(this@MainActivity, ct01Data, ct01DeclarantSignature, ct01OwnerSignature, 2))
+            setImageBitmap(Ct01Renderer.renderBitmap(this@MainActivity, ct01Data, ct01DeclarantSignature, ct01OwnerSignature, ct01HeadSignature, ct01GuardianSignature, 2))
             background = rounded(Color.rgb(234, 239, 247), 5f)
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         showCt01Shell("Xem trước CT01", box, "Xem")
@@ -1341,13 +1411,19 @@ class MainActivity : AppCompatActivity() {
         collectCt01Form()
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(13), dp(15), dp(13), dp(18)) }
         body.addView(label("Ký xác nhận CT01", 21f, navy, true))
-        body.addView(label("Chữ ký được đưa đúng vào ô chủ sở hữu và người kê khai.", 12f, Color.rgb(92, 106, 130), false), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 4, bottom = 12))
+        body.addView(label("Ký đúng khu vực áp dụng. Có thể để trống mục cha, mẹ hoặc người giám hộ nếu không thuộc trường hợp này.", 12f, Color.rgb(92, 106, 130), false), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 4, bottom = 12))
+        val head = signatureCard("Chủ hộ", ct01Data.headName, ct01HeadSignature) { ct01HeadSignature = null }
         val owner = signatureCard("Chủ sở hữu chỗ ở hợp pháp", ct01Data.legalOwnerName, ct01OwnerSignature) { ct01OwnerSignature = null }
+        val guardian = signatureCard("Cha, mẹ hoặc người giám hộ", ct01Data.guardianName, ct01GuardianSignature) { ct01GuardianSignature = null }
         val declarant = signatureCard("Người kê khai", ct01Data.declarantName, ct01DeclarantSignature) { ct01DeclarantSignature = null }
+        body.addView(head.first, margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 12))
         body.addView(owner.first, margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 12))
+        body.addView(guardian.first, margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 12))
         body.addView(declarant.first, margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 12))
         body.addView(actionButton("Áp dụng chữ ký vào CT01", blue) {
-            ct01OwnerSignature = owner.second.asBitmap(); ct01DeclarantSignature = declarant.second.asBitmap(); showCt01Preview()
+            ct01HeadSignature = head.second.asBitmap(); ct01OwnerSignature = owner.second.asBitmap()
+            ct01GuardianSignature = guardian.second.asBitmap(); ct01DeclarantSignature = declarant.second.asBitmap()
+            showCt01Preview()
         }, margins(dp(48), bottom = 12))
         showCt01Shell("Ký tên CT01", ScrollView(this).apply { addView(body) }, "Ký")
     }
@@ -1389,8 +1465,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun createCt01Pdf() {
         collectCt01Form()
+        if (!validateCt01()) return
         runCatching {
-            val file = Ct01Renderer.createPdf(this, ct01Data, ct01DeclarantSignature, ct01OwnerSignature)
+            val file = Ct01Renderer.createPdf(this, ct01Data, ct01DeclarantSignature, ct01OwnerSignature, ct01HeadSignature, ct01GuardianSignature)
             publishToDownloads(file, "application/pdf")
             startActivity(Intent(Intent.ACTION_VIEW).apply { setDataAndType(fileUri(file), "application/pdf"); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) })
             toast("Đã tạo CT01 gồm 02 trang A4")
@@ -1399,14 +1476,47 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun validateCt01(): Boolean {
+        fun reject(message: String): Boolean { toast(message); return false }
+        val datePattern = Regex("\\d{2}/\\d{2}/\\d{4}")
+        fun validDate(value: String): Boolean = datePattern.matches(value) && runCatching {
+            java.text.SimpleDateFormat("dd/MM/yyyy", Locale.US).apply { isLenient = false }.parse(value)
+        }.isSuccess
+        if (ct01Data.authority.isBlank()) return reject("Vui lòng nhập cơ quan đăng ký cư trú tại mục Kính gửi")
+        if (ct01Data.declarantName.isBlank()) return reject("Vui lòng nhập họ tên người có thay đổi thông tin cư trú")
+        if (!validDate(ct01Data.birthDate)) return reject("Ngày sinh phải là ngày hợp lệ theo định dạng DD/MM/YYYY")
+        if (ct01Data.gender !in listOf("Nam", "Nữ")) return reject("Giới tính chỉ chọn Nam hoặc Nữ")
+        if (!ct01Data.citizenId.matches(Regex("\\d{12}"))) return reject("Số định danh người kê khai phải gồm đúng 12 chữ số")
+        if (ct01Data.phone.isBlank()) return reject("Vui lòng nhập số điện thoại liên hệ")
+        if (ct01Data.email.isNotBlank() && !android.util.Patterns.EMAIL_ADDRESS.matcher(ct01Data.email).matches()) return reject("Địa chỉ email chưa đúng định dạng")
+        if (ct01Data.headName.isBlank()) return reject("Vui lòng nhập họ tên chủ hộ gia đình mới")
+        if (!ct01Data.headCitizenId.matches(Regex("\\d{12}"))) return reject("Số định danh chủ hộ phải gồm đúng 12 chữ số")
+        if (ct01Data.requestContent.isBlank()) return reject("Vui lòng ghi rõ nội dung đề nghị")
+        val invalidMember = ct01Data.members.firstOrNull {
+            !it.citizenId.matches(Regex("\\d{12}")) || !validDate(it.birthDate) || it.gender !in listOf("Nam", "Nữ") || it.relationship.isBlank()
+        }
+        if (invalidMember != null) return reject("Hãy kiểm tra ngày sinh, giới tính, số định danh và quan hệ của ${invalidMember.name}")
+        if (ct01Data.consentMethod == "Xác nhận qua VNeID") {
+            if (ct01Data.legalOwnerName.isBlank()) return reject("Xác nhận qua VNeID cần họ tên chủ sở hữu chỗ ở hợp pháp")
+            if (!ct01Data.legalOwnerCitizenId.matches(Regex("\\d{12}"))) return reject("Xác nhận qua VNeID cần số định danh chủ sở hữu gồm đúng 12 chữ số")
+            if (ct01Data.guardianName.isNotBlank() && !ct01Data.guardianCitizenId.matches(Regex("\\d{12}"))) {
+                return reject("Số định danh của cha, mẹ hoặc người giám hộ phải gồm đúng 12 chữ số")
+            }
+        }
+        if (!validDate(ct01Data.signingDate)) return reject("Ngày ký phải là ngày hợp lệ theo định dạng DD/MM/YYYY")
+        return true
+    }
+
     private fun saveCt01Image() {
-        collectCt01Form(); toast("Đang ghép 02 trang CT01 vào một hình…")
+        collectCt01Form()
+        if (!validateCt01()) return
+        toast("Đang ghép 02 trang CT01 vào một hình…")
         Thread {
             runCatching {
                 val directory = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: filesDir, "CT01")
                 check(directory.exists() || directory.mkdirs())
                 val file = File(directory, "CT01_${safeFileStamp()}_02_Trang_A4.png")
-                val bitmap = Ct01Renderer.renderCombinedA4Bitmap(this, ct01Data, ct01DeclarantSignature, ct01OwnerSignature)
+                val bitmap = Ct01Renderer.renderCombinedA4Bitmap(this, ct01Data, ct01DeclarantSignature, ct01OwnerSignature, ct01HeadSignature, ct01GuardianSignature)
                 FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
                 MediaScannerConnection.scanFile(this, arrayOf(file.absolutePath), arrayOf("image/png"), null)
                 publishToDownloads(file, "image/png")
@@ -1548,6 +1658,8 @@ class MainActivity : AppCompatActivity() {
         landlordSignature?.recycle()
         ct01DeclarantSignature?.recycle()
         ct01OwnerSignature?.recycle()
+        ct01HeadSignature?.recycle()
+        ct01GuardianSignature?.recycle()
         super.onDestroy()
     }
 }

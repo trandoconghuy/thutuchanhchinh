@@ -21,8 +21,14 @@ data class Ct01Data(
     var headCitizenId: String = "",
     var requestContent: String = "",
     var members: MutableList<Ct01Member> = mutableListOf(),
+    var headConsent: String = "",
     var legalOwnerName: String = "",
     var legalOwnerCitizenId: String = "",
+    var ownerConsent: String = "",
+    var guardianName: String = "",
+    var guardianCitizenId: String = "",
+    var guardianConsent: String = "",
+    var consentMethod: String = "Ký trực tiếp trên tờ khai",
     var signingPlace: String = "Thành phố Hồ Chí Minh",
     var signingDate: String = ""
 )
