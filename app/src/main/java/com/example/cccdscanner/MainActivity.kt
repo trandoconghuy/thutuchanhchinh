@@ -1,7 +1,9 @@
 package com.example.cccdscanner
 
 import android.Manifest
+import android.app.DatePickerDialog
 import android.app.Dialog
+import android.app.TimePickerDialog
 import android.content.ContentValues
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -32,6 +34,7 @@ import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.NumberPicker
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -60,6 +63,7 @@ import java.io.FileOutputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.Locale
+import java.util.Calendar
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
@@ -151,7 +155,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         val topTitle = TextView(this).apply {
-            text = "▣  Thông tin hợp đồng"
+            text = "▣  Văn bản số · Hợp đồng"
             setTextColor(Color.WHITE)
             textSize = 19f
             typeface = Typeface.DEFAULT_BOLD
@@ -213,8 +217,8 @@ class MainActivity : AppCompatActivity() {
         }
         scroll.addView(body)
         sectionTitle(body, "Thông tin chung", "Thời gian và địa điểm ký kết")
-        field(body, "time", "Giờ / Phút", contract.time)
-        field(body, "date", "Ngày lập HĐ", contract.date)
+        smartField(body, "time", "Giờ / Phút", contract.time) { showTimePicker(fields.getValue("time")) }
+        smartField(body, "date", "Ngày lập HĐ", contract.date) { showDatePicker(fields.getValue("date")) }
         field(body, "place", "Địa điểm lập", contract.place, true)
 
         sectionTitle(body, "Bên cho thuê (Bên A)", "Thông tin chủ sở hữu nhà")
@@ -224,9 +228,9 @@ class MainActivity : AppCompatActivity() {
         personFields(body, "tenant", contract.tenant, true)
 
         sectionTitle(body, "Nội dung thỏa thuận", "Thông tin được đưa trực tiếp vào bản hợp đồng")
-        field(body, "area", "Diện tích (m²)", contract.area)
-        field(body, "duration", "Thời hạn", contract.duration)
-        field(body, "monthlyRent", "Giá thuê/tháng", contract.monthlyRent)
+        smartField(body, "area", "Diện tích (m²)", contract.area) { showAreaPicker(fields.getValue("area")) }
+        smartField(body, "duration", "Thời hạn", contract.duration) { showDurationPicker(fields.getValue("duration")) }
+        smartField(body, "monthlyRent", "Giá thuê/tháng", contract.monthlyRent) { showRentPicker(fields.getValue("monthlyRent")) }
         val saveTenant = actionButton("Lưu người thuê vào thư viện", green) {
             collectForm()
             if (tenantStore.save(contract.tenant)) toast("Đã lưu hồ sơ người thuê")
@@ -242,12 +246,49 @@ class MainActivity : AppCompatActivity() {
         bottomNavigation.visibility = View.GONE
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(24), dp(12), dp(24))
+            setPadding(dp(12), dp(20), dp(12), dp(24))
         }
+        page.addView(buildBrandHeader(), margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 18))
+        page.addView(space(1, 0), LinearLayout.LayoutParams(1, 0, 1f))
         page.addView(buildScanPanel(), margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 14))
         page.addView(buildLibraryPanel(), margins(ViewGroup.LayoutParams.WRAP_CONTENT))
+        page.addView(label("Bản quyền sáng tạo · trandoconghuy@gmail.com", 10f, Color.rgb(104, 118, 143), false).apply {
+            gravity = Gravity.CENTER
+        }, margins(dp(30), top = 12))
         swapContent(page)
+    }
+
+    private fun buildBrandHeader(): View {
+        val card = MaterialCardView(this).apply {
+            radius = dp(24).toFloat()
+            cardElevation = dp(8).toFloat()
+            setCardBackgroundColor(deepBlue)
+            strokeWidth = 0
+        }
+        val row = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(18), dp(18), dp(18), dp(18))
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.rgb(12, 45, 111), Color.rgb(38, 101, 224))).apply {
+                cornerRadius = dp(24).toFloat()
+            }
+        }
+        val mark = FrameLayout(this).apply {
+            background = rounded(Color.WHITE, 17f)
+            elevation = dp(3).toFloat()
+            addView(ImageView(this@MainActivity).apply {
+                setImageResource(R.drawable.app_icon)
+                contentDescription = "Biểu trưng phần mềm chuyển đổi văn bản số"
+                setPadding(dp(7), dp(7), dp(7), dp(7))
+            }, FrameLayout.LayoutParams(dp(58), dp(58), Gravity.CENTER))
+        }
+        row.addView(mark, LinearLayout.LayoutParams(dp(66), dp(66)).apply { marginEnd = dp(14) })
+        val copy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        copy.addView(label("PHẦN MỀM", 11f, Color.rgb(184, 210, 255), true).apply { letterSpacing = .16f })
+        copy.addView(label("Chuyển đổi văn bản số", 20f, Color.WHITE, true), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 2))
+        copy.addView(label("Quét căn cước · Lập hợp đồng · Xuất A4", 11f, Color.rgb(221, 232, 255), false), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 4))
+        row.addView(copy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        card.addView(row)
+        return card
     }
 
     private fun buildScanPanel(): View {
@@ -302,6 +343,99 @@ class MainActivity : AppCompatActivity() {
         parent.addView(input, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     }
 
+    private fun smartField(parent: LinearLayout, key: String, caption: String, value: String, chooser: () -> Unit) {
+        parent.addView(label(caption, 12f, navy, true), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 8, bottom = 4))
+        val input = EditText(this).apply {
+            setText(value)
+            textSize = 16f
+            setTextColor(Color.rgb(21, 28, 41))
+            setPadding(dp(13), dp(8), dp(10), dp(8))
+            background = rounded(Color.WHITE, 9f, Color.rgb(164, 190, 232))
+            minHeight = dp(49)
+            maxLines = 1
+            isSingleLine = true
+            isFocusable = false
+            isCursorVisible = false
+            isClickable = true
+            setCompoundDrawablesWithIntrinsicBounds(0, 0, R.drawable.ic_expand_more, 0)
+            compoundDrawablePadding = dp(7)
+            contentDescription = "$caption. Chạm để chọn"
+            setOnClickListener { press(this); chooser() }
+        }
+        fields[key] = input
+        parent.addView(input, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        parent.addView(label("Chạm để chọn, không cần nhập bàn phím", 10f, Color.rgb(101, 117, 143), false), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 3))
+    }
+
+    private fun showTimePicker(target: EditText) {
+        val values = Regex("(\\d{1,2}).*?(\\d{1,2})").find(target.text.toString())?.groupValues
+        val hour = values?.getOrNull(1)?.toIntOrNull()?.coerceIn(0, 23) ?: 20
+        val minute = values?.getOrNull(2)?.toIntOrNull()?.coerceIn(0, 59) ?: 0
+        TimePickerDialog(this, { _, selectedHour, selectedMinute ->
+            target.setText(String.format(Locale("vi", "VN"), "%02d giờ %02d phút", selectedHour, selectedMinute))
+        }, hour, minute, true).show()
+    }
+
+    private fun showDatePicker(target: EditText) {
+        val numbers = Regex("\\d+").findAll(target.text.toString()).map { it.value.toInt() }.toList()
+        val now = Calendar.getInstance()
+        val day = numbers.getOrNull(0)?.coerceIn(1, 31) ?: now.get(Calendar.DAY_OF_MONTH)
+        val month = numbers.getOrNull(1)?.coerceIn(1, 12)?.minus(1) ?: now.get(Calendar.MONTH)
+        val year = numbers.getOrNull(2)?.coerceIn(1900, 2200) ?: now.get(Calendar.YEAR)
+        DatePickerDialog(this, { _, selectedYear, selectedMonth, selectedDay ->
+            target.setText(String.format(Locale("vi", "VN"), "%02d tháng %02d năm %04d", selectedDay, selectedMonth + 1, selectedYear))
+        }, year, month, day).show()
+    }
+
+    private fun showAreaPicker(target: EditText) {
+        val picker = NumberPicker(this).apply {
+            minValue = 5
+            maxValue = 500
+            value = Regex("\\d+").find(target.text.toString())?.value?.toIntOrNull()?.coerceIn(5, 500) ?: 30
+            wrapSelectorWheel = false
+            setFormatter { "$it m²" }
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Chọn diện tích thuê")
+            .setView(picker)
+            .setPositiveButton("Áp dụng") { _, _ -> target.setText("${picker.value} m²") }
+            .setNegativeButton("Hủy", null)
+            .show()
+    }
+
+    private fun showDurationPicker(target: EditText) {
+        val values = arrayOf("03 tháng", "06 tháng", "09 tháng", "01 năm", "02 năm", "03 năm", "05 năm", "10 năm")
+        val current = values.indexOf(target.text.toString()).coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle("Chọn thời hạn thuê")
+            .setSingleChoiceItems(values, current) { dialog, which ->
+                target.setText(values[which])
+                dialog.dismiss()
+            }
+            .setNegativeButton("Hủy", null)
+            .show()
+    }
+
+    private fun showRentPicker(target: EditText) {
+        val picker = NumberPicker(this).apply {
+            minValue = 5
+            maxValue = 500
+            val currentAmount = target.text.toString().filter(Char::isDigit).toLongOrNull() ?: 2_300_000L
+            value = (currentAmount / 100_000L).toInt().coerceIn(minValue, maxValue)
+            wrapSelectorWheel = false
+            setFormatter { formatRent(it * 100_000L) }
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Chọn giá thuê mỗi tháng")
+            .setMessage("Vuốt để tăng hoặc giảm theo bước 100.000 đồng")
+            .setView(picker)
+            .setPositiveButton("Áp dụng") { _, _ -> target.setText("${formatRent(picker.value * 100_000L)} VNĐ/tháng") }
+            .setNegativeButton("Hủy", null)
+            .show()
+    }
+
+    private fun formatRent(amount: Long): String = String.format(Locale.US, "%,d", amount).replace(',', '.')
+
     private fun sectionTitle(parent: LinearLayout, title: String, subtitle: String) {
         val wrap = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(12), 0, dp(6)) }
         wrap.addView(label(title, 17f, navy, true))
@@ -339,29 +473,33 @@ class MainActivity : AppCompatActivity() {
         collectForm()
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(12), dp(12), dp(12), dp(94))
-            setBackgroundColor(Color.rgb(226, 232, 242))
+            setPadding(dp(10), dp(10), dp(10), dp(8))
+            setBackgroundColor(Color.rgb(218, 226, 239))
         }
-        val hint = label("Chạm trực tiếp vào nội dung hợp đồng để quay lại chỉnh sửa.", 13f, blue, true).apply {
-            gravity = Gravity.CENTER
-            background = rounded(Color.rgb(224, 237, 255), 12f)
-            setOnClickListener { showForm() }
+        val toolbar = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(13), dp(7), dp(7), dp(7))
+            background = rounded(Color.WHITE, 14f, Color.rgb(194, 208, 230))
         }
-        container.addView(hint, margins(dp(44), bottom = 10))
-        val image = ImageView(this).apply {
-            adjustViewBounds = true
-            scaleType = ImageView.ScaleType.FIT_CENTER
+        val instructions = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        instructions.addView(label("Bản xem trước · 02 trang A4", 13f, deepBlue, true))
+        instructions.addView(label("Chụm 2 ngón để phóng to · kéo để di chuyển", 10f, Color.rgb(93, 108, 133), false), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 2))
+        toolbar.addView(instructions, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        toolbar.addView(actionButton("Chỉnh sửa", Color.rgb(232, 240, 255), blue) { showForm() }, LinearLayout.LayoutParams(dp(92), dp(40)))
+        container.addView(toolbar, margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 9))
+
+        val previewFrame = FrameLayout(this).apply {
             setPadding(dp(5), dp(5), dp(5), dp(5))
-            setImageBitmap(ContractRenderer.renderBitmap(this@MainActivity, contract, tenantSignature, landlordSignature, 3))
-            background = rounded(Color.WHITE, 2f, Color.rgb(218, 224, 234))
-            elevation = dp(6).toFloat()
-            contentDescription = "Bản xem trước hợp đồng thuê nhà"
-            setOnClickListener { showForm() }
+            background = rounded(Color.rgb(202, 213, 231), 9f)
         }
-        container.addView(image, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        val scroll = ScrollView(this).apply { addView(container) }
-        swapContent(scroll)
+        val image = ZoomableImageView(this).apply {
+            setImageBitmap(ContractRenderer.renderBitmap(this@MainActivity, contract, tenantSignature, landlordSignature, 2))
+            background = rounded(Color.rgb(234, 239, 247), 5f)
+            contentDescription = "Bản xem trước hai trang hợp đồng thuê nhà. Có thể phóng to và thu nhỏ bằng hai ngón tay."
+        }
+        previewFrame.addView(image, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        container.addView(previewFrame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        swapContent(container)
     }
 
     private fun showSignatures() {
@@ -434,20 +572,24 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveImage() {
         collectForm()
-        runCatching {
-            val directory = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: filesDir, "HopDong")
-            check(directory.exists() || directory.mkdirs()) { "Không thể tạo thư mục ảnh" }
-            val stamp = safeFileStamp()
-            for (pageNumber in 1..ContractRenderer.PAGE_COUNT) {
-                val file = File(directory, "Hop_Dong_${stamp}_Trang_$pageNumber.png")
-                val bitmap = ContractRenderer.renderA4PrintBitmap(this, pageNumber, contract, tenantSignature, landlordSignature)
+        toast("Đang ghép 02 trang A4 vào một hình…")
+        Thread {
+            runCatching {
+                val directory = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: filesDir, "HopDong")
+                check(directory.exists() || directory.mkdirs()) { "Không thể tạo thư mục ảnh" }
+                val file = File(directory, "Hop_Dong_${safeFileStamp()}_02_Trang_A4.png")
+                val bitmap = ContractRenderer.renderCombinedA4Bitmap(this, contract, tenantSignature, landlordSignature)
                 FileOutputStream(file).use { out -> bitmap.compress(Bitmap.CompressFormat.PNG, 100, out) }
                 bitmap.recycle()
                 MediaScannerConnection.scanFile(this, arrayOf(file.absolutePath), arrayOf("image/png"), null)
                 publishToDownloads(file, "image/png")
+                file
+            }.onSuccess {
+                runOnUiThread { toast("Đã lưu 02 trang A4 chung trong 01 hình vào thư mục Tải xuống/HopDong") }
+            }.onFailure {
+                runOnUiThread { toast("Không thể lưu ảnh: ${it.message ?: "lỗi không xác định"}") }
             }
-            toast("Đã lưu 02 ảnh A4 300 DPI trong thư mục Tải xuống")
-        }.onFailure { toast("Không thể lưu ảnh: ${it.message ?: "lỗi không xác định"}") }
+        }.start()
     }
 
     private fun publishToDownloads(source: File, mimeType: String) {

@@ -69,6 +69,33 @@ object ContractRenderer {
         return bitmap
     }
 
+    /** Both 300-DPI A4 pages in one PNG, stacked vertically with a small separator. */
+    fun renderCombinedA4Bitmap(
+        context: Context,
+        contract: ContractData,
+        tenantSignature: Bitmap?,
+        landlordSignature: Bitmap?
+    ): Bitmap {
+        val gap = 32
+        // RGB_565 keeps the 2480 x 7048 export reliable on lower-memory phones.
+        val bitmap = Bitmap.createBitmap(
+            A4_PRINT_WIDTH,
+            A4_PRINT_HEIGHT * PAGE_COUNT + gap,
+            Bitmap.Config.RGB_565
+        )
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(Color.rgb(226, 232, 242))
+        val fonts = loadFonts(context)
+        for (pageNumber in 1..PAGE_COUNT) {
+            canvas.save()
+            canvas.translate(0f, ((pageNumber - 1) * (A4_PRINT_HEIGHT + gap)).toFloat())
+            canvas.scale(A4_PRINT_WIDTH / PAGE_WIDTH.toFloat(), A4_PRINT_HEIGHT / PAGE_HEIGHT.toFloat())
+            drawPage(canvas, pageNumber, contract, tenantSignature, landlordSignature, fonts)
+            canvas.restore()
+        }
+        return bitmap
+    }
+
     fun createPdf(
         context: Context,
         contract: ContractData,
@@ -105,7 +132,8 @@ object ContractRenderer {
         landlordSignature: Bitmap?,
         fonts: Fonts
     ) {
-        canvas.drawColor(Color.WHITE)
+        // drawColor() ignores the current translation and erased the other page in a stacked preview.
+        canvas.drawRect(0f, 0f, PAGE_WIDTH.toFloat(), PAGE_HEIGHT.toFloat(), Paint().apply { color = Color.WHITE })
         if (pageNumber == 1) drawFirstPage(canvas, contract, fonts)
         else drawSecondPage(canvas, contract, tenantSignature, landlordSignature, fonts)
     }
