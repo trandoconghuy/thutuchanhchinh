@@ -12,7 +12,7 @@ data class PersonData(
     var birthDate: String = "",
     var citizenId: String = "",
     var issueDate: String = "",
-    var issuePlace: String = "Bộ Công an",
+    var issuePlace: String = "",
     var permanentAddress: String = "",
     var currentAddress: String = "",
     var gender: String = ""
@@ -27,29 +27,21 @@ data class PersonData(
     companion object {
         fun fromJson(json: JSONObject) = PersonData(
             json.optString("name"), json.optString("birthDate"), json.optString("citizenId"),
-            json.optString("issueDate"), json.optString("issuePlace", "Bộ Công an"),
+            json.optString("issueDate"), json.optString("issuePlace"),
             json.optString("permanentAddress"), json.optString("currentAddress"), json.optString("gender")
         )
     }
 }
 
 data class ContractData(
-    var time: String = "20 giờ 00 phút",
-    var date: String = "22 tháng 09 năm 2026",
-    var place: String = "558/23 Bình Quới, KP 12, phường Bình Quới, Thành phố Hồ Chí Minh",
-    var landlord: PersonData = PersonData(
-        "HUỲNH CÔNG HÂN", "10/03/1983", "079083010463", "10/08/2021",
-        "Cục Cảnh sát QLHC về TTXH", "558/23 Bình Quới, KP 12, phường Bình Quới, Thành phố Hồ Chí Minh",
-        "558/23 Bình Quới, KP 12, phường Bình Quới, Thành phố Hồ Chí Minh"
-    ),
-    var tenant: PersonData = PersonData(
-        "NGUYỄN HOÀNG QUỐC HUY", "11/12/2005", "082205003837", "20/10/2024",
-        "Bộ Công an", "Tổ 2, Ấp Hội Gia, xã Mỹ Phong, thành phố Mỹ Tho, tỉnh Đồng Tháp",
-        "558/23 Bình Quới, KP 12, phường Bình Quới, Thành phố Hồ Chí Minh"
-    ),
-    var area: String = "30 m2",
-    var duration: String = "02 năm",
-    var monthlyRent: String = "2.300.000 VNĐ/tháng"
+    var time: String = "",
+    var date: String = "",
+    var place: String = "",
+    var landlord: PersonData = PersonData(),
+    var tenant: PersonData = PersonData(),
+    var area: String = "",
+    var duration: String = "",
+    var monthlyRent: String = ""
 )
 
 class TenantStore(context: Context) {
