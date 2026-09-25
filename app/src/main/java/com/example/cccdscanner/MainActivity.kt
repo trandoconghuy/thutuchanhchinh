@@ -23,6 +23,11 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.location.Address
+import android.location.Geocoder
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.media.MediaScannerConnection
 import android.media.AudioManager
 import android.media.ToneGenerator
@@ -74,6 +79,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.Locale
 import java.util.Calendar
+import java.util.Date
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
@@ -154,9 +160,17 @@ class MainActivity : AppCompatActivity() {
     private var templateSelectionVisible = false
     private var ct01Visible = false
     private var lastScannedCitizen: ScannedCitizen? = null
+    private var pendingLocationTarget: String? = null
+    private var contractLocationRequested = false
+    private var ct01LocationRequested = false
 
     private val requestCamera = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) showCameraScanner() else toast("Cần quyền camera để quét mã QR trên CCCD")
+    }
+
+    private val requestLocation = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        if (result.values.any { it }) resolveCurrentLocation()
+        else toast("Không có quyền vị trí. Bạn vẫn có thể chọn tỉnh/thành và phường/xã thủ công.")
     }
 
     private val pickQrImage = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -173,7 +187,7 @@ class MainActivity : AppCompatActivity() {
         tenantStore = TenantStore(this)
         cameraExecutor = Executors.newSingleThreadExecutor()
         buildShell()
-        showScanHome()
+        showTemplateSelection(emptyCitizen())
     }
 
     private fun buildShell() {
@@ -276,7 +290,7 @@ class MainActivity : AppCompatActivity() {
         header.addView(label("HĐ", 11f, Color.rgb(22, 35, 63), true).apply { gravity = Gravity.CENTER; background = rounded(Color.rgb(184, 134, 46), 18f) }, LinearLayout.LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(11) })
         val title = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(label("Hợp đồng thuê nhà", 15f, Color.WHITE, true)); addView(label("Bước ${contractStep + 1} / 7", 11f, Color.rgb(190, 199, 218), false), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 2)) }
         header.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        header.addView(iconButton("×", "Đóng hợp đồng") { lastScannedCitizen?.let { showTemplateSelection(it) } ?: showScanHome() }, LinearLayout.LayoutParams(dp(40), dp(40)))
+        header.addView(iconButton("×", "Đóng hợp đồng") { showTemplateSelection(lastScannedCitizen ?: emptyCitizen()) }, LinearLayout.LayoutParams(dp(40), dp(40)))
         root.addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(64)))
         val progress = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(14), dp(10), dp(14), dp(7)) }
         repeat(7) { index -> progress.addView(View(this).apply { background = rounded(if (index <= contractStep) Color.rgb(184, 134, 46) else Color.rgb(227, 225, 218), 3f) }, LinearLayout.LayoutParams(0, dp(4), 1f).apply { if (index < 6) marginEnd = dp(4) }) }
@@ -290,19 +304,31 @@ class MainActivity : AppCompatActivity() {
         val nextLabel = when (contractStep) { 5 -> "Kiểm tra xong"; 6 -> "Về biểu mẫu"; else -> "Tiếp tục" }
         navigation.addView(actionButton(nextLabel, Color.rgb(22, 35, 63)) {
             persistContractWizardStep()
-            if (contractStep == 6) lastScannedCitizen?.let { showTemplateSelection(it) } ?: showScanHome()
+            if (contractStep == 6) showTemplateSelection(lastScannedCitizen ?: emptyCitizen())
             else if (validateContractWizardStep()) { contractStep++; showContractWizard() }
         }, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = if (contractStep > 0) dp(6) else 0 })
         root.addView(navigation); swapContent(root)
+        if (contractStep == 0 && contract.province.isBlank() && !contractLocationRequested) {
+            contractLocationRequested = true
+            requestAutomaticLocation("contract")
+        }
     }
 
     private fun buildContractWizardStep(body: LinearLayout) {
         when (contractStep) {
             0 -> {
-                wizardHeading(body, "B1 · Thông tin hợp đồng", "Thời gian và địa điểm lập", "Chọn thời gian, ngày ký; chỉ nhập địa điểm thực tế.")
+                wizardHeading(body, "B1 · Thông tin hợp đồng", "Thời gian và địa điểm lập", "Giờ, ngày được lấy theo thiết bị. Địa điểm có thể tự nhận diện hoặc chọn thủ công.")
                 smartField(body, "time", "Giờ / Phút", contract.time) { showTimePicker(fields.getValue("time")) }
                 smartField(body, "date", "Ngày lập hợp đồng", contract.date) { showDatePicker(fields.getValue("date")) }
-                field(body, "place", "Địa điểm lập hợp đồng", contract.place, true)
+                field(body, "placeDetail", "1. Số nhà, tên đường, thôn/ấp/khu phố", contract.placeDetail, true)
+                smartField(body, "contractWard", "2. Phường / Xã", contract.ward) {
+                    if (contract.province.isBlank()) toast("Vui lòng chọn tỉnh / thành phố trước")
+                    else showWardPicker(contract.province) { collectForm(); contract.ward = it; contract.place = composeAddress(contract.placeDetail, contract.ward, contract.province); showContractWizard() }
+                }
+                smartField(body, "contractProvince", "3. Tỉnh / Thành phố", contract.province) {
+                    showCt01ListPicker("Chọn tỉnh / thành phố", provinceChoices()) { collectForm(); contract.province = it; contract.ward = ""; contract.place = composeAddress(contract.placeDetail, contract.ward, contract.province); showContractWizard() }
+                }
+                body.addView(actionButton("⌖  Tự động lấy vị trí hiện tại", Color.WHITE, deepBlue) { collectForm(); requestAutomaticLocation("contract") }, margins(dp(46), top = 8))
             }
             1 -> {
                 wizardHeading(body, "B2 · Bên cho thuê", "Thông tin Bên A", "Quét QR CCCD để điền nhanh, sau đó kiểm tra các trường còn thiếu.")
@@ -321,9 +347,6 @@ class MainActivity : AppCompatActivity() {
                 smartField(body, "area", "Diện tích thuê", contract.area) { showAreaPicker(fields.getValue("area")) }
                 smartField(body, "duration", "Thời hạn thuê", contract.duration) { showDurationPicker(fields.getValue("duration")) }
                 smartField(body, "monthlyRent", "Giá thuê mỗi tháng", contract.monthlyRent) { showRentPicker(fields.getValue("monthlyRent")) }
-                body.addView(actionButton("Lưu bên thuê vào thư viện", Color.WHITE, green) {
-                    collectForm(); if (tenantStore.save(contract.tenant)) toast("Đã lưu hồ sơ người thuê") else toast("Cần họ tên và số CCCD trước khi lưu")
-                }, margins(dp(46), top = 14))
             }
             4 -> {
                 wizardHeading(body, "B5 · Ký xác nhận", "Chữ ký hai bên", "Ký trong từng khung; chữ ký được căn đúng vị trí trên hợp đồng.")
@@ -340,7 +363,7 @@ class MainActivity : AppCompatActivity() {
                     background = rounded(Color.rgb(232, 236, 243), 8f, Color.rgb(210, 214, 222)); contentDescription = "Bản xem trước hợp đồng. Có thể phóng to và di chuyển bằng cảm ứng."
                 }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
                 } else {
-                    wizardHeading(body, "B7 · Hoàn tất", "Hợp đồng đã sẵn sàng", "Xuất file, lưu hình hoặc chia sẻ qua ứng dụng trên điện thoại.")
+                    completionHeading(body, "B7 · Hoàn tất", "Hợp đồng đã sẵn sàng", "Xuất file, lưu hình hoặc chia sẻ qua ứng dụng trên điện thoại.")
                     wizardExportRow(body, "PDF", "Xuất file PDF", "Hai trang A4 đúng mẫu hợp đồng") { openPdf() }
                     wizardExportRow(body, "PNG", "Lưu hình ảnh", "Ghép hai trang trong một ảnh") { saveImage() }
                     wizardExportRow(body, "↗", "Chia sẻ PDF", "Gửi qua Zalo, email, Drive hoặc ứng dụng khác") { sharePdf() }
@@ -397,12 +420,6 @@ class MainActivity : AppCompatActivity() {
         smartField(body, "area", "Diện tích (m²)", contract.area) { showAreaPicker(fields.getValue("area")) }
         smartField(body, "duration", "Thời hạn", contract.duration) { showDurationPicker(fields.getValue("duration")) }
         smartField(body, "monthlyRent", "Giá thuê/tháng", contract.monthlyRent) { showRentPicker(fields.getValue("monthlyRent")) }
-        val saveTenant = actionButton("Lưu người thuê vào thư viện", green) {
-            collectForm()
-            if (tenantStore.save(contract.tenant)) toast("Đã lưu hồ sơ người thuê")
-            else toast("Vui lòng nhập họ tên và số CCCD")
-        }
-        body.addView(saveTenant, margins(dp(48), top = 18, bottom = 18))
         swapContent(scroll)
     }
 
@@ -589,7 +606,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showDurationPicker(target: EditText) {
-        val values = arrayOf("03 tháng", "06 tháng", "09 tháng", "01 năm", "02 năm", "03 năm", "05 năm", "10 năm")
+        val values = arrayOf("01 tháng", "03 tháng", "06 tháng", "09 tháng", "12 tháng", "18 tháng", "24 tháng (02 năm)")
         val current = values.indexOf(target.text.toString()).coerceAtLeast(0)
         AlertDialog.Builder(this)
             .setTitle("Chọn thời hạn thuê")
@@ -634,7 +651,10 @@ class MainActivity : AppCompatActivity() {
         fun value(key: String, fallback: String) = fields[key]?.text?.toString()?.trim()?.ifBlank { fallback } ?: fallback
         contract.time = value("time", contract.time)
         contract.date = value("date", contract.date)
-        contract.place = value("place", contract.place)
+        contract.placeDetail = value("placeDetail", contract.placeDetail)
+        contract.ward = value("contractWard", contract.ward)
+        contract.province = value("contractProvince", contract.province)
+        contract.place = composeAddress(contract.placeDetail, contract.ward, contract.province).ifBlank { value("place", contract.place) }
         contract.area = value("area", contract.area)
         contract.duration = value("duration", contract.duration)
         contract.monthlyRent = value("monthlyRent", contract.monthlyRent)
@@ -1255,7 +1275,7 @@ class MainActivity : AppCompatActivity() {
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(14), dp(14), dp(24))
-            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.rgb(241, 246, 255), Color.rgb(248, 250, 253)))
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.rgb(246, 245, 241), Color.rgb(239, 243, 249)))
         }
 
         val header = MaterialCardView(this).apply {
@@ -1267,20 +1287,24 @@ class MainActivity : AppCompatActivity() {
         val headerBody = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(14), dp(16), dp(17))
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.rgb(15, 48, 119), Color.rgb(42, 101, 220))).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.rgb(22, 35, 63), Color.rgb(35, 62, 112))).apply {
                 cornerRadius = dp(22).toFloat()
             }
         }
         val headerRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        headerRow.addView(iconButton("‹", "Quay lại thông tin căn cước") { showIdentityResult(citizen) }, LinearLayout.LayoutParams(dp(42), dp(42)).apply { marginEnd = dp(11) })
+        headerRow.addView(ImageView(this).apply {
+            setImageResource(R.drawable.app_icon); setPadding(dp(5), dp(5), dp(5), dp(5)); background = rounded(Color.WHITE, 13f)
+            contentDescription = "Logo Phần mềm chuyển đổi văn bản số"
+        }, LinearLayout.LayoutParams(dp(50), dp(50)).apply { marginEnd = dp(12) })
         val titles = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        titles.addView(label("THƯ VIỆN BIỂU MẪU", 10f, Color.rgb(190, 214, 255), true).apply { letterSpacing = .12f })
-        titles.addView(label("Chọn biểu mẫu cần dùng", 21f, Color.WHITE, true), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 2))
+        titles.addView(label("PHẦN MỀM CHUYỂN ĐỔI VĂN BẢN SỐ", 9f, Color.rgb(220, 190, 126), true).apply { letterSpacing = .08f })
+        titles.addView(label("Chọn biểu mẫu", 22f, Color.WHITE, true), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 3))
         headerRow.addView(titles, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         headerBody.addView(headerRow)
-        headerBody.addView(label("Các biểu mẫu được sắp xếp theo từng nhóm thủ tục để dễ tìm và tránh chọn nhầm.", 12f, Color.rgb(222, 233, 255), false).apply {
+        headerBody.addView(label("Chọn đúng công việc cần thực hiện. Dữ liệu được xử lý trực tiếp và riêng tư trên thiết bị.", 12f, Color.rgb(222, 228, 239), false).apply {
             setLineSpacing(dp(2).toFloat(), 1f)
         }, margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 10))
+        if (citizen.citizenId.isNotBlank()) headerBody.addView(label("✓  Đã nhận diện: ${citizen.name}", 11f, Color.rgb(183, 225, 195), true), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 10))
         header.addView(headerBody)
         page.addView(header, margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 21))
 
@@ -1294,9 +1318,9 @@ class MainActivity : AppCompatActivity() {
             accent = green
         ) {
             contractStep = 0
-            applyCitizenToContract(citizen)
+            prepareContract(citizen)
             showForm()
-            toast("Đã đưa thông tin CCCD vào Hợp đồng thuê nhà")
+            if (citizen.citizenId.isNotBlank()) toast("Đã đưa thông tin CCCD vào Hợp đồng thuê nhà")
         }, margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 12))
 
         page.addView(templateCard(
@@ -1385,6 +1409,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applyCitizenToContract(citizen: ScannedCitizen) {
+        if (citizen.citizenId.isBlank()) return
         contract.tenant.citizenId = citizen.citizenId
         contract.tenant.name = citizen.name.uppercase(Locale("vi", "VN"))
         contract.tenant.birthDate = citizen.birthDate
@@ -1396,11 +1421,20 @@ class MainActivity : AppCompatActivity() {
         fields.clear()
     }
 
+    private fun prepareContract(citizen: ScannedCitizen) {
+        contract.time = java.text.SimpleDateFormat("HH 'giờ' mm 'phút'", Locale("vi", "VN")).format(Date())
+        contract.date = java.text.SimpleDateFormat("dd 'tháng' MM 'năm' yyyy", Locale("vi", "VN")).format(Date())
+        contractLocationRequested = false
+        applyCitizenToContract(citizen)
+    }
+
+    private fun emptyCitizen() = ScannedCitizen("", "", "", "", "", "", "")
+
     private fun prepareCt01(citizen: ScannedCitizen) {
         ct01Data = Ct01Data(
             declarantName = vietnameseTitleCase(citizen.name),
             birthDate = citizen.birthDate,
-            gender = citizen.gender,
+            gender = citizen.gender.ifBlank { "Nam" },
             citizenId = citizen.citizenId,
             oldPermanentAddress = citizen.permanentAddress,
             requiresGuardian = runCatching {
@@ -1418,6 +1452,7 @@ class MainActivity : AppCompatActivity() {
         ct01HeadSignature = null
         ct01GuardianSignature = null
         ct01Step = 0
+        ct01LocationRequested = false
     }
 
     private fun showCt01Form() {
@@ -1442,7 +1477,7 @@ class MainActivity : AppCompatActivity() {
         title.addView(label("Tờ khai CT01 — Đăng ký tạm trú", 15f, Color.WHITE, true))
         title.addView(label("Bước ${ct01Step + 1} / 11", 11f, Color.rgb(190, 199, 218), false), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 2))
         header.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        header.addView(iconButton("×", "Đóng CT01") { lastScannedCitizen?.let { showTemplateSelection(it) } ?: showScanHome() }, LinearLayout.LayoutParams(dp(40), dp(40)))
+        header.addView(iconButton("×", "Đóng CT01") { showTemplateSelection(lastScannedCitizen ?: emptyCitizen()) }, LinearLayout.LayoutParams(dp(40), dp(40)))
         root.addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(64)))
 
         val progress = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(14), dp(10), dp(14), dp(7)) }
@@ -1464,11 +1499,15 @@ class MainActivity : AppCompatActivity() {
         val nextLabel = when (ct01Step) { 9 -> "Kiểm tra xong"; 10 -> "Về biểu mẫu"; else -> "Tiếp tục" }
         navigation.addView(actionButton(nextLabel, Color.rgb(22, 35, 63)) {
             persistCt01WizardStep()
-            if (ct01Step == 10) lastScannedCitizen?.let { showTemplateSelection(it) } ?: showScanHome()
+            if (ct01Step == 10) showTemplateSelection(lastScannedCitizen ?: emptyCitizen())
             else if (validateCt01WizardStep()) { ct01Step++; showCt01Wizard() }
         }, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = if (ct01Step > 0) dp(6) else 0 })
         root.addView(navigation)
         swapContent(root)
+        if (ct01Step == 1 && ct01Data.province.isBlank() && !ct01LocationRequested) {
+            ct01LocationRequested = true
+            requestAutomaticLocation("ct01")
+        }
     }
 
     private fun buildCt01WizardStep(body: LinearLayout) {
@@ -1488,10 +1527,20 @@ class MainActivity : AppCompatActivity() {
             1 -> {
                 wizardHeading(body, "B2 · Nơi nộp hồ sơ", "Bạn nộp hồ sơ tại cơ quan nào?", "Mục Kính gửi sẽ được tự đề xuất từ phường/xã ở bước 4 và vẫn có thể chỉnh lại.")
                 body.addView(label("Danh mục hành chính · chọn nhanh", 11f, green, true), margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 8))
+                ct01SmartField(body, "province", "Tỉnh / Thành phố", ct01Data.province) {
+                    showCt01ListPicker("Chọn tỉnh / thành phố", provinceChoices()) { collectCt01Form(); ct01Data.province = it; ct01Data.ward = ""; ct01Data.authority = ""; showCt01Wizard() }
+                }
+                ct01SmartField(body, "ward", "Phường / Xã nơi đăng ký", ct01Data.ward) {
+                    if (ct01Data.province.isBlank()) toast("Vui lòng chọn tỉnh / thành phố trước")
+                    else showWardPicker(ct01Data.province) { collectCt01Form(); ct01Data.ward = it; updateCt01GeneratedText(); showCt01Wizard() }
+                }
                 ct01Field(body, "authority", "Cơ quan đăng ký cư trú", ct01Data.authority, true)
                 body.addView(actionButton("Chọn cơ quan gợi ý", Color.WHITE, deepBlue) {
-                    showCt01ListPicker("Chọn cơ quan đăng ký cư trú", authoritySuggestions()) { ct01Data.authority = it; showCt01Wizard() }
+                    val suggestions = authoritySuggestions()
+                    if (suggestions.isEmpty()) toast("Hãy chọn tỉnh/thành và phường/xã trước")
+                    else showCt01ListPicker("Chọn cơ quan đăng ký cư trú", suggestions) { ct01Data.authority = it; showCt01Wizard() }
                 }, margins(dp(46), top = 9))
+                body.addView(actionButton("⌖  Tự động xác định theo vị trí", Color.rgb(22, 35, 63)) { collectCt01Form(); requestAutomaticLocation("ct01") }, margins(dp(46), top = 8))
             }
             2 -> {
                 wizardHeading(body, "B3 · Loại hình tạm trú", "Bạn đăng ký theo diện nào?", "Lựa chọn này quyết định cách điền chủ hộ và nội dung đề nghị.")
@@ -1506,19 +1555,22 @@ class MainActivity : AppCompatActivity() {
                 wizardHeading(body, "B4 · Nơi ở mới", "Thông tin nơi tạm trú", "Tách đúng ba trường theo dữ liệu hành chính.")
                 ct01Field(body, "newAddressDetail", "1. Số nhà, tên đường, thôn/ấp/khu phố", ct01Data.newAddressDetail, true)
                 ct01SmartField(body, "ward", "2. Phường / Xã", ct01Data.ward) {
-                    showCt01ListPicker("Chọn phường / xã", wardSuggestions(ct01Data.province)) { collectCt01Form(); ct01Data.ward = it; showCt01Wizard() }
+                    if (ct01Data.province.isBlank()) toast("Vui lòng chọn tỉnh / thành phố trước")
+                    else showWardPicker(ct01Data.province) { collectCt01Form(); ct01Data.ward = it; updateCt01GeneratedText(); showCt01Wizard() }
                 }
                 ct01SmartField(body, "province", "3. Tỉnh / Thành phố", ct01Data.province) {
-                    showCt01ListPicker("Chọn tỉnh / thành phố", provinceChoices()) { collectCt01Form(); ct01Data.province = it; showCt01Wizard() }
+                    showCt01ListPicker("Chọn tỉnh / thành phố", provinceChoices()) { collectCt01Form(); ct01Data.province = it; ct01Data.ward = ""; ct01Data.authority = ""; showCt01Wizard() }
                 }
+                body.addView(actionButton("⌖  Dùng vị trí hiện tại", Color.WHITE, deepBlue) { collectCt01Form(); requestAutomaticLocation("ct01") }, margins(dp(46), bottom = 8))
                 ct01DateField(body, "temporaryUntil", "Tạm trú đến ngày", ct01Data.temporaryUntil)
             }
             4 -> {
                 wizardHeading(body, "B5 · Người kê khai", "Thông tin của bạn", "Quét QR căn cước hoặc chọn ảnh có sẵn trong máy.")
                 buildCt01PartyStep(body, "subject", ct01Data.declarantName, ct01Data.citizenId,
-                    "Tôi, ${ct01Data.declarantName.ifBlank { "[Họ tên]" }}, cam đoan các thông tin khai trên là đúng sự thật.", ct01Data.applicantAgreed, ct01DeclarantSignature)
-                ct01Field(body, "phone", "Số điện thoại", ct01Data.phone)
-                ct01Field(body, "email", "Email (không bắt buộc)", ct01Data.email)
+                    "Tôi, ${ct01Data.declarantName.ifBlank { "[Họ tên]" }}, cam đoan các thông tin khai trên là đúng sự thật.", ct01Data.applicantAgreed, ct01DeclarantSignature) { section ->
+                    ct01Field(section, "phone", "Số điện thoại nhận kết quả", ct01Data.phone)
+                    ct01Field(section, "email", "Email nhận kết quả (không bắt buộc)", ct01Data.email)
+                }
             }
             5 -> {
                 wizardHeading(body, "B6 · Chủ hộ", "Thông tin chủ hộ", "Giao diện và thao tác giống bước người kê khai.")
@@ -1526,7 +1578,9 @@ class MainActivity : AppCompatActivity() {
                     autoFillCt01HeadFromSubject()
                     wizardSkip(body, "Vì bạn lập hộ tạm trú riêng, thông tin người đăng ký được dùng làm chủ hộ mới.")
                 } else buildCt01PartyStep(body, "head", ct01Data.headName, ct01Data.headCitizenId,
-                    "Tôi đồng ý cho ${ct01Data.declarantName.ifBlank { "người đăng ký" }} đăng ký tạm trú vào hộ của tôi tại địa chỉ trên.", ct01Data.headAgreed, ct01HeadSignature)
+                    "Tôi đồng ý cho ${ct01Data.declarantName.ifBlank { "người đăng ký" }} đăng ký tạm trú vào hộ của tôi tại địa chỉ trên.", ct01Data.headAgreed, ct01HeadSignature) { section ->
+                    ct01SmartField(section, "relationshipToHead", "Chủ hộ là gì của người đăng ký?", ct01Data.relationshipToHead) { showRelationshipPicker() }
+                }
             }
             6 -> {
                 wizardHeading(body, "B7 · Chủ sở hữu nhà", "Thông tin chủ sở hữu", "Chỉ nhập riêng khi chủ hộ không đồng thời là chủ sở hữu.")
@@ -1565,7 +1619,7 @@ class MainActivity : AppCompatActivity() {
                 }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
             }
             else -> {
-                wizardHeading(body, "B11 · Hoàn tất", "Tờ khai đã sẵn sàng", "Xuất đúng định dạng, chia sẻ hoặc mở hướng dẫn nộp trực tuyến.")
+                completionHeading(body, "B11 · Hoàn tất", "Tờ khai đã sẵn sàng", "Xuất đúng định dạng, chia sẻ hoặc mở hướng dẫn nộp trực tuyến.")
                 wizardExportRow(body, "PDF", "Xuất file PDF", "Khổ A4, dùng để in và nộp trực tiếp") { createCt01Pdf() }
                 wizardExportRow(body, "DOC", "Xuất file Word", "Có thể chỉnh sửa trên Microsoft Word") { createCt01Docx() }
                 wizardExportRow(body, "PNG", "Xuất hình ảnh", "Ghép hai trang trong một ảnh chất lượng cao") { saveCt01Image() }
@@ -1579,6 +1633,33 @@ class MainActivity : AppCompatActivity() {
         parent.addView(label(step.uppercase(Locale("vi", "VN")), 11f, Color.rgb(184, 134, 46), true).apply { letterSpacing = .06f })
         parent.addView(label(title, 22f, Color.rgb(28, 34, 51), true), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 4))
         parent.addView(label(subtitle, 13f, Color.rgb(107, 114, 128), false).apply { setLineSpacing(dp(2).toFloat(), 1f) }, margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 5, bottom = 16))
+    }
+
+    private fun completionHeading(parent: LinearLayout, step: String, title: String, subtitle: String) {
+        wizardHeading(parent, step, title, subtitle)
+        val status = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = rounded(Color.rgb(235, 246, 239), 12f, Color.rgb(177, 211, 188))
+            addView(label("✓", 18f, Color.WHITE, true).apply { gravity = Gravity.CENTER; background = rounded(green, 18f) }, LinearLayout.LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(11) })
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(label("Dữ liệu đã được kiểm tra", 13f, navy, true))
+                addView(label("Chọn định dạng bên dưới để xuất hoặc chia sẻ.", 11f, Color.rgb(86, 98, 117), false), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 2))
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        parent.addView(status, margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 14))
+    }
+
+    private fun showRelationshipPicker() {
+        val labels = arrayOf(
+            "Chính tôi là chủ hộ", "Chủ hộ là vợ của tôi", "Chủ hộ là chồng của tôi",
+            "Chủ hộ là cha của tôi", "Chủ hộ là mẹ của tôi", "Chủ hộ là con của tôi",
+            "Tôi thuê nhà của chủ hộ", "Tôi ở nhờ nhà chủ hộ", "Quan hệ khác"
+        )
+        val values = arrayOf("Chủ hộ", "Chồng", "Vợ", "Con", "Con", "Cha/Mẹ", "Ở thuê", "Ở nhờ", "Khác")
+        AlertDialog.Builder(this).setTitle("Chủ hộ là gì của người đăng ký?").setItems(labels) { _, index ->
+            collectCt01Form(); ct01Data.relationshipToHead = values[index]; showCt01Wizard()
+        }.setNegativeButton("Hủy", null).show()
     }
 
     private fun wizardNote(parent: LinearLayout, title: String, text: String, dotColor: Int) {
@@ -1604,12 +1685,13 @@ class MainActivity : AppCompatActivity() {
         row.addView(copy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)); parent.addView(row, margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 10))
     }
 
-    private fun buildCt01PartyStep(parent: LinearLayout, target: String, name: String, citizenId: String, statement: String, agreed: Boolean, signature: Bitmap?) {
+    private fun buildCt01PartyStep(parent: LinearLayout, target: String, name: String, citizenId: String, statement: String, agreed: Boolean, signature: Bitmap?, afterIdentity: ((LinearLayout) -> Unit)? = null) {
         val methods = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         methods.addView(actionButton("Quét QR căn cước", Color.rgb(22, 35, 63)) { collectCt01Form(); pendingCt01ScanTarget = target; startCameraScan() }, LinearLayout.LayoutParams(0, dp(47), 1f).apply { marginEnd = dp(5) })
         methods.addView(actionButton("Chọn ảnh thư viện", Color.WHITE, deepBlue) { collectCt01Form(); pendingCt01ScanTarget = target; pickQrImage.launch("image/*") }, LinearLayout.LayoutParams(0, dp(47), 1f).apply { marginStart = dp(5) })
         parent.addView(methods, margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 12))
         parent.addView(wizardIdentityResult(name, citizenId), margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 12))
+        afterIdentity?.invoke(parent)
         parent.addView(agreementCard(target, statement, agreed), margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 12))
         val role = when (target) { "subject" -> "Người kê khai"; "head" -> "Chủ hộ"; "owner" -> "Chủ sở hữu"; else -> "Cha/mẹ/người giám hộ" }
         val signaturePair = signatureCard(role, name, signature) { clearCt01Signature(target) }
@@ -1660,11 +1742,101 @@ class MainActivity : AppCompatActivity() {
 
     private fun provinceChoices() = arrayOf("Thành phố Hồ Chí Minh", "Thành phố Hà Nội", "Thành phố Hải Phòng", "Thành phố Huế", "Thành phố Đà Nẵng", "Thành phố Cần Thơ", "Tỉnh An Giang", "Tỉnh Bắc Ninh", "Tỉnh Cà Mau", "Tỉnh Cao Bằng", "Tỉnh Đắk Lắk", "Tỉnh Điện Biên", "Tỉnh Đồng Nai", "Tỉnh Đồng Tháp", "Tỉnh Gia Lai", "Tỉnh Hà Tĩnh", "Tỉnh Hưng Yên", "Tỉnh Khánh Hòa", "Tỉnh Lai Châu", "Tỉnh Lâm Đồng", "Tỉnh Lạng Sơn", "Tỉnh Lào Cai", "Tỉnh Nghệ An", "Tỉnh Ninh Bình", "Tỉnh Phú Thọ", "Tỉnh Quảng Ngãi", "Tỉnh Quảng Ninh", "Tỉnh Quảng Trị", "Tỉnh Sơn La", "Tỉnh Tây Ninh", "Tỉnh Thái Nguyên", "Tỉnh Thanh Hóa", "Tỉnh Tuyên Quang", "Tỉnh Vĩnh Long")
 
-    private fun wardSuggestions(province: String): Array<String> = if (province == "Thành phố Hồ Chí Minh")
-        arrayOf("phường Bình Quới", "phường Thạnh Mỹ Tây", "phường Bình Thạnh", "phường Sài Gòn", "phường Bến Thành", "phường Chợ Lớn", "phường Tân Định", "phường Gia Định", "phường Thủ Đức", "xã Bình Chánh", "xã Tân Nhựt")
-    else arrayOf("phường trung tâm", "xã trung tâm", "Phường/Xã khác — nhập tại ô địa chỉ chi tiết")
+    private fun wardSuggestions(province: String): Array<String> = when (province) {
+        "Thành phố Hồ Chí Minh" -> arrayOf("phường Bình Quới", "phường Thạnh Mỹ Tây", "phường Bình Thạnh", "phường Sài Gòn", "phường Bến Thành", "phường Chợ Lớn", "phường Tân Định", "phường Gia Định", "phường Thủ Đức", "xã Bình Chánh", "xã Tân Nhựt")
+        "Thành phố Hà Nội" -> arrayOf("phường Ba Đình", "phường Hoàn Kiếm", "phường Tây Hồ", "phường Cầu Giấy", "phường Đống Đa", "phường Hai Bà Trưng", "phường Thanh Xuân", "phường Hà Đông")
+        "Thành phố Đà Nẵng" -> arrayOf("phường Hải Châu", "phường Thanh Khê", "phường Sơn Trà", "phường Ngũ Hành Sơn", "phường Cẩm Lệ", "phường Liên Chiểu")
+        "Thành phố Hải Phòng" -> arrayOf("phường Hồng Bàng", "phường Ngô Quyền", "phường Lê Chân", "phường Hải An", "phường Kiến An")
+        "Thành phố Cần Thơ" -> arrayOf("phường Ninh Kiều", "phường Cái Răng", "phường Bình Thủy", "phường Ô Môn", "phường Thốt Nốt")
+        "Thành phố Huế" -> arrayOf("phường Thuận Hóa", "phường Phú Xuân", "phường Vỹ Dạ", "phường An Cựu", "phường Hương Long")
+        else -> emptyArray()
+    }
 
-    private fun authoritySuggestions(): Array<String> = wardSuggestions(ct01Data.province).map { "Công an $it, ${ct01Data.province}" }.toTypedArray()
+    private fun showWardPicker(province: String, selected: (String) -> Unit) {
+        val manualLabel = "Nhập phường / xã khác…"
+        val items = wardSuggestions(province).toMutableList().apply { add(manualLabel) }.toTypedArray()
+        showCt01ListPicker("Chọn phường / xã", items) { value ->
+            if (value != manualLabel) selected(value) else {
+                val input = EditText(this).apply { hint = "Ví dụ: phường Bình Quới"; setPadding(dp(14), dp(8), dp(14), dp(8)) }
+                AlertDialog.Builder(this).setTitle("Nhập đúng tên phường / xã").setView(input)
+                    .setPositiveButton("Áp dụng") { _, _ -> input.text.toString().trim().takeIf { it.isNotBlank() }?.let(selected) }
+                    .setNegativeButton("Hủy", null).show()
+            }
+        }
+    }
+
+    private fun authoritySuggestions(): Array<String> = if (ct01Data.ward.isBlank() || ct01Data.province.isBlank()) emptyArray()
+        else arrayOf("Công an ${ct01Data.ward}, ${ct01Data.province}")
+
+    private fun composeAddress(detail: String, ward: String, province: String): String =
+        listOf(detail, ward, province).map { it.trim().trim(',') }.filter { it.isNotBlank() }.distinct().joinToString(", ")
+
+    private fun requestAutomaticLocation(target: String) {
+        pendingLocationTarget = target
+        val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (fine || coarse) resolveCurrentLocation()
+        else requestLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+    }
+
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun resolveCurrentLocation() {
+        val manager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val providers = listOf(LocationManager.NETWORK_PROVIDER, LocationManager.GPS_PROVIDER).filter {
+            runCatching { manager.isProviderEnabled(it) }.getOrDefault(false)
+        }
+        if (providers.isEmpty()) { toast("Hãy bật Vị trí trên điện thoại hoặc chọn địa chỉ thủ công"); return }
+        val latest = providers.mapNotNull { runCatching { manager.getLastKnownLocation(it) }.getOrNull() }.maxByOrNull { it.time }
+        if (latest != null) { resolveLocationAddress(latest); return }
+        val provider = providers.first()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            manager.getCurrentLocation(provider, null, ContextCompat.getMainExecutor(this)) { location ->
+                if (location != null) resolveLocationAddress(location) else toast("Chưa lấy được vị trí. Vui lòng thử lại hoặc chọn thủ công.")
+            }
+        } else {
+            manager.requestSingleUpdate(provider, object : LocationListener {
+                override fun onLocationChanged(location: Location) = resolveLocationAddress(location)
+            }, Looper.getMainLooper())
+        }
+    }
+
+    private fun resolveLocationAddress(location: Location) {
+        cameraExecutor.execute {
+            val address = runCatching {
+                @Suppress("DEPRECATION")
+                Geocoder(this, Locale("vi", "VN")).getFromLocation(location.latitude, location.longitude, 1)?.firstOrNull()
+            }.getOrNull()
+            runOnUiThread {
+                if (address == null) toast("Đã lấy tọa độ nhưng chưa nhận được địa chỉ. Vui lòng chọn thủ công.")
+                else applyResolvedAddress(address)
+            }
+        }
+    }
+
+    private fun applyResolvedAddress(address: Address) {
+        val province = normalizeProvince(address.adminArea ?: address.locality.orEmpty())
+        val ward = listOf(address.subLocality, address.locality, address.subAdminArea).firstOrNull { !it.isNullOrBlank() }.orEmpty()
+        val street = listOf(address.subThoroughfare, address.thoroughfare).filterNotNull().filter { it.isNotBlank() }.joinToString(" ")
+        when (pendingLocationTarget) {
+            "contract" -> {
+                if (contract.placeDetail.isBlank()) contract.placeDetail = street
+                contract.ward = ward; contract.province = province
+                contract.place = composeAddress(contract.placeDetail, contract.ward, contract.province)
+                showContractWizard()
+            }
+            "ct01" -> {
+                if (ct01Data.newAddressDetail.isBlank()) ct01Data.newAddressDetail = street
+                ct01Data.ward = ward; ct01Data.province = province
+                updateCt01GeneratedText(); showCt01Wizard()
+            }
+        }
+        toast("Đã tự động điền địa chỉ theo vị trí hiện tại")
+    }
+
+    private fun normalizeProvince(raw: String): String {
+        val known = provinceChoices().firstOrNull { it.equals(raw, true) || it.endsWith(raw, true) }
+        return known ?: raw
+    }
 
     private fun persistCt01WizardStep() {
         collectCt01Form(); persistActiveSignature()
@@ -1980,11 +2152,11 @@ class MainActivity : AppCompatActivity() {
     private fun showCt01MemberRelationship(index: Int) {
         val member = ct01Data.members.getOrNull(index) ?: return
         val toDeclarant = arrayOf("Vợ", "Chồng", "Con", "Cha", "Mẹ", "Anh", "Chị", "Em", "Cháu", "Người khác")
-        AlertDialog.Builder(this).setTitle("${member.name}: quan hệ với người khai")
+        AlertDialog.Builder(this).setTitle("${member.name} có quan hệ gì với người kê khai?")
             .setItems(toDeclarant) { _, first ->
                 member.relationshipToDeclarant = toDeclarant[first]
                 val toHead = arrayOf("Chủ hộ", "Vợ", "Chồng", "Con", "Cha", "Mẹ", "Cháu", "Ở nhờ", "Ở mượn", "Ở thuê", "Cùng ở thuê", "Khác")
-                AlertDialog.Builder(this).setTitle("Chủ hộ là gì của ${member.name}?")
+                AlertDialog.Builder(this).setTitle("${member.name} có quan hệ gì với chủ hộ?")
                     .setItems(toHead) { _, second -> member.relationship = toHead[second]; showCt01Form() }
                     .setOnCancelListener { showCt01Form() }.show()
             }.setOnCancelListener { showCt01Form() }.show()
@@ -2313,10 +2485,10 @@ class MainActivity : AppCompatActivity() {
     override fun onBackPressed() {
         when {
             ct01Visible && ct01Step > 0 -> { persistCt01WizardStep(); ct01Step--; showCt01Wizard() }
-            ct01Visible -> lastScannedCitizen?.let { showTemplateSelection(it) } ?: showScanHome()
+            ct01Visible -> showTemplateSelection(lastScannedCitizen ?: emptyCitizen())
             contractWizardVisible && contractStep > 0 -> { persistContractWizardStep(); contractStep--; showContractWizard() }
-            contractWizardVisible -> lastScannedCitizen?.let { showTemplateSelection(it) } ?: showScanHome()
-            templateSelectionVisible -> lastScannedCitizen?.let { showIdentityResult(it) } ?: showScanHome()
+            contractWizardVisible -> showTemplateSelection(lastScannedCitizen ?: emptyCitizen())
+            templateSelectionVisible -> lastScannedCitizen?.let { showIdentityResult(it) } ?: super.onBackPressed()
             identityResultVisible -> showForm()
             else -> super.onBackPressed()
         }
@@ -2328,6 +2500,7 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("Làm mới") { _, _ ->
                 val fresh = ContractData()
                 contract.time = fresh.time; contract.date = fresh.date; contract.place = fresh.place
+                contract.placeDetail = fresh.placeDetail; contract.ward = fresh.ward; contract.province = fresh.province
                 contract.landlord = fresh.landlord; contract.tenant = fresh.tenant
                 contract.area = fresh.area; contract.duration = fresh.duration; contract.monthlyRent = fresh.monthlyRent
                 tenantSignature = null; landlordSignature = null; fields.clear(); showForm()
