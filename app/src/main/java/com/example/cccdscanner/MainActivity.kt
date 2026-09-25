@@ -2422,7 +2422,7 @@ class MainActivity : AppCompatActivity() {
             runCatching {
                 val directory = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: filesDir, "CT01")
                 check(directory.exists() || directory.mkdirs())
-                val file = File(directory, "CT01_${safeFileStamp()}_02_Trang_A4.png")
+                val file = File(directory, "CT01.png")
                 val bitmap = Ct01Renderer.renderCombinedA4Bitmap(this, ct01Data, ct01DeclarantSignature, ct01OwnerSignature, ct01HeadSignature, ct01GuardianSignature)
                 FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
                 MediaScannerConnection.scanFile(this, arrayOf(file.absolutePath), arrayOf("image/png"), null)

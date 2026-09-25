@@ -13,7 +13,7 @@ object Ct01DocxExporter {
     fun create(context: Context, data: Ct01Data): File {
         val directory = File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) ?: context.filesDir, "CT01")
         check(directory.exists() || directory.mkdirs())
-        val file = File(directory, "To_Khai_CT01_${safeFileStamp()}.docx")
+        val file = File(directory, "CT01.doc")
         ZipOutputStream(FileOutputStream(file)).use { zip ->
             entry(zip, "[Content_Types].xml", contentTypes)
             entry(zip, "_rels/.rels", relationships)
@@ -37,6 +37,15 @@ object Ct01DocxExporter {
         return "<w:tc><w:tcPr><w:tcW w:w=\"$width\" w:type=\"dxa\"/><w:vAlign w:val=\"center\"/></w:tcPr><w:p><w:pPr><w:jc w:val=\"center\"/><w:spacing w:after=\"20\"/></w:pPr><w:r><w:rPr>${if (bold) "<w:b/>" else ""}<w:sz w:val=\"18\"/></w:rPr><w:t xml:space=\"preserve\">$content</w:t></w:r></w:p></w:tc>"
     }
 
+    private fun signatureCell(date: String, title: String, consent: String, name: String, citizenId: String, width: Int): String {
+        fun line(text: String, bold: Boolean = false, italic: Boolean = false, size: Int = 18, after: Int = 25): String =
+            "<w:p><w:pPr><w:jc w:val=\"center\"/><w:spacing w:after=\"$after\"/></w:pPr><w:r><w:rPr>${if (bold) "<w:b/>" else ""}${if (italic) "<w:i/>" else ""}<w:sz w:val=\"$size\"/></w:rPr><w:t xml:space=\"preserve\">${xml(text)}</w:t></w:r></w:p>"
+        val idLine = if (citizenId.isBlank()) "" else line("Số căn cước: $citizenId", false, false, 16)
+        return "<w:tc><w:tcPr><w:tcW w:w=\"$width\" w:type=\"dxa\"/><w:vAlign w:val=\"top\"/></w:tcPr>" +
+            line(date, false, true, 12, 55) + line(title, true, false, 17, 55) + line(consent, false, false, 15, 420) +
+            line(name, true, false, 18, 30) + idLine + "</w:tc>"
+    }
+
     private fun document(data: Ct01Data): String {
         val members = (0 until 9).joinToString("") { index ->
             val member = data.members.getOrNull(index)
@@ -48,16 +57,26 @@ object Ct01DocxExporter {
             "(1) Cơ quan đăng ký cư trú.",
             "(2) Trường hợp đăng ký thường trú, đăng ký tạm trú, tách hộ ghi thông tin chủ hộ gia đình mới.",
             "(3) Ghi rõ ràng, cụ thể nội dung đề nghị. Ví dụ: ghi chi tiết thông tin nơi đề nghị đăng ký thường trú hoặc nơi đề nghị đăng ký tạm trú hoặc nội dung đề nghị xác nhận thông tin về cư trú..... Trường hợp đăng ký thường trú, đăng ký tạm trú, gia hạn tạm trú, tách hộ mà địa giới hành chính đã có sự thay đổi theo quyết định của cơ quan có thẩm quyền thì ghi thông tin theo địa giới hành chính mới, đồng thời ghi chú địa giới hành chính theo giấy tờ, tài liệu chứng minh chỗ ở hợp pháp.",
-            "(4) Áp dụng đối với các trường hợp quy định tại khoản 2 (Trừ trường hợp người dưới 6 tuổi đăng ký về với cha, mẹ, người giám hộ), khoản 3, khoản 5, khoản 6 Điều 20; khoản 1 Điều 25; điểm a khoản 1 Điều 26 Luật Cư trú và các trường hợp khác theo quy định pháp luật. Việc lấy ý kiến của chủ hộ được thực hiện theo các phương thức: ký trực tiếp trên Tờ khai; xác nhận qua ứng dụng định danh quốc gia hoặc dịch vụ công trực tuyến; hoặc có văn bản đồng ý riêng.",
-            "(5) Áp dụng đối với các trường hợp quy định tại khoản 2 (Trừ trường hợp người dưới 6 tuổi đăng ký về với cha, mẹ, người giám hộ), khoản 3, khoản 4, khoản 5, khoản 6 Điều 20; khoản 1 Điều 25 Luật Cư trú; điểm a khoản 1 Điều 26 Luật Cư trú và các trường hợp khác theo quy định pháp luật. Việc lấy ý kiến của chủ sở hữu chỗ ở hợp pháp được thực hiện bằng ký trực tiếp; xác nhận qua ứng dụng định danh quốc gia (VNeID) hoặc dịch vụ công trực tuyến; hoặc văn bản đồng ý riêng.",
-            "(6) Áp dụng đối với trường hợp người chưa thành niên, người hạn chế hành vi dân sự, người không đủ năng lực hành vi dân sự có thay đổi thông tin về cư trú. Việc lấy ý kiến của cha, mẹ hoặc người giám hộ được thực hiện bằng ký trực tiếp; xác nhận qua ứng dụng định danh quốc gia (VNeID) hoặc dịch vụ công trực tuyến; hoặc văn bản đồng ý riêng.",
+            "(4) Áp dụng đối với các trường hợp quy định tại khoản 2 (Trừ trường hợp người dưới 6 tuổi đăng ký về với cha, mẹ, người giám hộ), khoản 3, khoản 5, khoản 6 Điều 20; khoản 1 Điều 25; điểm a khoản 1 Điều 26 Luật Cư trú và các trường hợp khác theo quy định pháp luật. Việc lấy ý kiến của chủ hộ được thực hiện theo các phương thức sau:",
+            "a) Chủ hộ ghi rõ nội dung đồng ý và ký, ghi rõ họ tên vào Tờ khai.",
+            "b) Chủ hộ xác nhận nội dung đồng ý thông qua ứng dụng định danh quốc gia hoặc các dịch vụ công trực tuyến khác.",
+            "c) Chủ hộ có văn bản riêng ghi rõ nội dung đồng ý (văn bản này không phải công chứng, chứng thực).",
+            "(5) Áp dụng đối với các trường hợp quy định tại khoản 2 (Trừ trường hợp người dưới 6 tuổi đăng ký về với cha, mẹ, người giám hộ), khoản 3, khoản 4, khoản 5, khoản 6 Điều 20; khoản 1 Điều 25 Luật Cư trú; điểm a khoản 1 Điều 26 Luật Cư trú (trường hợp người đứng đầu cơ sở trợ giúp xã hội quyết định chủ hộ) và các trường hợp khác theo quy định pháp luật. Việc lấy ý kiến của chủ sở hữu chỗ ở hợp pháp được thực hiện theo các phương thức sau:",
+            "a) Chủ sở hữu chỗ ở hợp pháp ghi rõ nội dung đồng ý và ký, ghi rõ họ tên vào Tờ khai.",
+            "b) Chủ sở hữu chỗ ở hợp pháp xác nhận nội dung đồng ý thông qua ứng dụng định danh quốc gia (VNeID) hoặc các dịch vụ công trực tuyến khác.",
+            "c) Chủ sở hữu chỗ ở hợp pháp có văn bản riêng ghi rõ nội dung đồng ý (văn bản này không phải công chứng, chứng thực).",
+            "Ghi chú: Trường hợp chủ sở hữu hợp chỗ ở hợp pháp gồm nhiều cá nhân, tổ chức thì phải có ý kiến đồng ý của tất cả các đồng sở hữu, tổ chức trừ trường hợp đã có thỏa thuận về việc cử đại diện có ý kiến đồng ý hoặc trường hợp có quy định khác; Trường hợp chủ sở hữu chỗ ở hợp pháp xác nhận nội dung đồng ý thông qua ứng dụng định danh quốc gia thì công dân phải kê khai thông tin về họ, chữ đệm, tên và số ĐDCN của chủ sở hữu chỗ ở hợp pháp. Trường hợp đăng ký thường trú theo quy định tại điểm a Khoản 2 Điều 20 Luật Cư trú mà chỗ ở hợp pháp có nhiều hơn một chủ sở hữu thì chỉ cần ý kiến đồng ý của ít nhất một chủ sở hữu.",
+            "(6) Áp dụng đối với trường hợp người chưa thành niên, người hạn chế hành vi dân sự, người không đủ năng lực hành vi dân sự có thay đổi thông tin về cư trú. Việc lấy ý kiến của cha, mẹ hoặc người giám hộ được thực hiện theo các phương thức sau:",
+            "a) Cha, mẹ hoặc người giám hộ ghi rõ nội dung đồng ý và ký, ghi rõ họ tên vào Tờ khai.",
+            "b) Cha, mẹ hoặc người giám hộ xác nhận nội dung đồng ý thông qua ứng dụng định danh quốc gia (VNeID) hoặc các dịch vụ công trực tuyến khác.",
+            "c) Cha, mẹ hoặc người giám hộ có văn bản riêng ghi rõ nội dung đồng ý (văn bản này không phải công chứng, chứng thực).",
             "(7) Trường hợp nộp trực tiếp người kê khai ký, ghi rõ họ, chữ đệm và tên vào Tờ khai; trường hợp nộp qua cổng dịch vụ công hoặc ứng dụng định danh quốc gia thì người kê khai không phải ký vào mục này. Trường hợp người kê khai đồng thời là chủ hộ hoặc chủ sở hữu chỗ ở hợp pháp hoặc cha, mẹ, người giám hộ của người thay đổi thì người kê khai không phải ký vào các mục (4), (5), (6), (7).",
-            "(8) Chỉ kê khai thông tin nhận diện tại khu vực ý kiến khi đề nghị xác nhận nội dung đồng ý qua ứng dụng định danh quốc gia (VNeID)."
+            "(8) Chỉ kê khai thông tin khi công dân đề nghị xác nhận nội dung đồng ý thông qua ứng dụng định danh quốc gia (VNeID)."
         ).joinToString("") { paragraph(it, false, false, 18, 55) }
         return """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
-${paragraph("Mẫu CT01 ban hành kèm theo Thông tư số 116/2026/TT-BCA", false, false, 18)}
-${paragraph("ngày 29 tháng 6 năm 2026 của Bộ trưởng Bộ Công an", false, false, 18, 160)}
+${paragraph("Mẫu CT01 ban hành kèm theo Thông tư số 116/2026/TT-BCA", false, true, 18)}
+${paragraph("ngày 29 tháng 6 năm 2026 của Bộ trưởng Bộ Công an", false, true, 18, 160)}
 ${paragraph("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", true, true, 24)}
 ${paragraph("Độc lập – Tự do – Hạnh phúc", true, true, 24, 220)}
 ${paragraph("TỜ KHAI THAY ĐỔI THÔNG TIN CƯ TRÚ", true, true, 30, 220)}
@@ -74,10 +93,10 @@ ${paragraph("11. Những thành viên trong hộ gia đình cùng thay đổi:")
 <w:tbl><w:tblPr><w:tblW w:w="8825" w:type="dxa"/><w:tblBorders><w:top w:val="single" w:sz="6"/><w:left w:val="single" w:sz="6"/><w:bottom w:val="single" w:sz="6"/><w:right w:val="single" w:sz="6"/><w:insideH w:val="single" w:sz="6"/><w:insideV w:val="single" w:sz="6"/></w:tblBorders></w:tblPr>
 <w:tr>${cell("TT",449,true)}${cell("Họ, chữ đệm và tên",2575,true)}${cell("Ngày sinh",1495,true)}${cell("Giới tính",729,true)}${cell("Số định danh cá nhân",2084,true)}${cell("Quan hệ với chủ hộ",1493,true)}</w:tr>$members</w:tbl>
 <w:tbl><w:tblPr><w:tblW w:w="8825" w:type="dxa"/></w:tblPr><w:tr>
-${cell("$dateText\nÝ KIẾN CỦA CHỦ HỘ(4)\n${data.headConsent}\n\n${data.headName}",2206,true)}
-${cell("$dateText\nÝ KIẾN CỦA CHỦ SỞ HỮU CHỖ Ở HỢP PHÁP(5)(8)\n${data.ownerConsent}\n\n${data.legalOwnerName}\n${data.legalOwnerCitizenId}",2206,true)}
-${cell("$dateText\nÝ KIẾN CỦA CHA HOẶC MẸ HOẶC NGƯỜI GIÁM HỘ(6)(8)\n${data.guardianConsent}\n\n${data.guardianName}\n${data.guardianCitizenId}",2206,true)}
-${cell("$dateText\nNGƯỜI KÊ KHAI(7)\n\n\n${data.declarantName}",2207,true)}
+${signatureCell(dateText,"Ý KIẾN CỦA CHỦ HỘ(4)",data.headConsent,data.headName,"",2206)}
+${signatureCell(dateText,"Ý KIẾN CỦA CHỦ SỞ HỮU CHỖ Ở HỢP PHÁP(5)",data.ownerConsent,data.legalOwnerName,data.legalOwnerCitizenId,2206)}
+${signatureCell(dateText,"Ý KIẾN CỦA CHA HOẶC MẸ HOẶC NGƯỜI GIÁM HỘ(6)",data.guardianConsent,data.guardianName,data.guardianCitizenId,2206)}
+${signatureCell(dateText,"NGƯỜI KÊ KHAI(7)","",data.declarantName,"",2207)}
 </w:tr></w:tbl>
 <w:p><w:r><w:br w:type="page"/></w:r></w:p>${paragraph("Chú thích:", true, false, 22, 120)}$notes
 <w:sectPr><w:pgSz w:w="11907" w:h="16840"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1701" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>
