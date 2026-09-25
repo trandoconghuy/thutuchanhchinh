@@ -50,3 +50,17 @@ data class Ct01Data(
     var signingPlace: String = "",
     var signingDate: String = ""
 )
+
+private fun sameCitizen(firstId: String, secondId: String): Boolean =
+    firstId.length == 12 && firstId == secondId
+
+fun Ct01Data.declarantIsHead(): Boolean =
+    householdType == "Lập hộ tạm trú riêng" || sameCitizen(citizenId, headCitizenId)
+
+fun Ct01Data.declarantIsOwner(): Boolean =
+    sameCitizen(citizenId, legalOwnerCitizenId) || (headIsLegalOwner && declarantIsHead())
+
+fun Ct01Data.declarantIsGuardian(): Boolean = sameCitizen(citizenId, guardianCitizenId)
+
+fun Ct01Data.declarantFillsAllSignatureRoles(): Boolean =
+    requiresGuardian && declarantIsHead() && declarantIsOwner() && declarantIsGuardian()

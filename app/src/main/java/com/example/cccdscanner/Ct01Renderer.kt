@@ -146,23 +146,36 @@ object Ct01Renderer {
         val signatureWidth = width / 4f
         val signatureTop = y
         val titles = arrayOf("Ý KIẾN CỦA CHỦ HỘ(4)", "Ý KIẾN CỦA CHỦ SỞ HỮU CHỖ Ở HỢP PHÁP(5)", "Ý KIẾN CỦA CHA HOẶC MẸ HOẶC NGƯỜI GIÁM HỘ(6)", "NGƯỜI KÊ KHAI(7)")
+        val hideHeadEntry = data.declarantIsHead()
+        val hideOwnerEntry = data.declarantIsOwner()
+        val hideGuardianEntry = !data.requiresGuardian || data.declarantIsGuardian()
+        val hideDeclarantEntry = data.declarantFillsAllSignatureRoles()
+        val effectiveOwnerSignature = if (data.headIsLegalOwner) headSignature else ownerSignature
         val dateParts = data.signingDate.split('/')
         val dateText = if (dateParts.size == 3) "${data.signingPlace}, ngày ${dateParts[0]} tháng ${dateParts[1]} năm ${dateParts[2]}" else "${data.signingPlace}, ${data.signingDate}"
         repeat(4) { index -> drawFittedCentered(canvas, dateText, LEFT + signatureWidth * index, signatureTop, signatureWidth, fonts.italic, 6.2f, 4.5f) }
         titles.forEachIndexed { index, text -> drawWrappedCentered(canvas, text, LEFT + index * signatureWidth, signatureTop + 15f, signatureWidth, paint(fonts.bold, 7.4f), 8.6f, 3) }
-        drawWrappedCentered(canvas, data.headConsent, LEFT, signatureTop + 45f, signatureWidth, paint(fonts.regular, 6.2f), 7.5f, 3)
-        drawWrappedCentered(canvas, data.ownerConsent, LEFT + signatureWidth, signatureTop + 45f, signatureWidth, paint(fonts.regular, 6.2f), 7.5f, 3)
-        drawWrappedCentered(canvas, data.guardianConsent, LEFT + signatureWidth * 2, signatureTop + 45f, signatureWidth, paint(fonts.regular, 6.2f), 7.5f, 3)
-        headSignature?.let { drawSignature(canvas, it, LEFT + 16f, signatureTop + 72f, signatureWidth - 32f, 43f) }
-        ownerSignature?.let { drawSignature(canvas, it, LEFT + signatureWidth + 16f, signatureTop + 72f, signatureWidth - 32f, 43f) }
-        guardianSignature?.let { drawSignature(canvas, it, LEFT + signatureWidth * 2 + 16f, signatureTop + 72f, signatureWidth - 32f, 43f) }
-        declarantSignature?.let { drawSignature(canvas, it, LEFT + signatureWidth * 3 + 16f, signatureTop + 72f, signatureWidth - 32f, 43f) }
-        drawFittedCentered(canvas, data.headName, LEFT, signatureTop + 130f, signatureWidth, fonts.bold, 8f, 5.5f)
-        drawFittedCentered(canvas, data.legalOwnerName, LEFT + signatureWidth, signatureTop + 130f, signatureWidth, fonts.bold, 8f, 5.5f)
-        drawFittedCentered(canvas, "Số căn cước: ${data.legalOwnerCitizenId}", LEFT + signatureWidth, signatureTop + 143f, signatureWidth, fonts.regular, 7f, 5.2f)
-        drawFittedCentered(canvas, data.guardianName, LEFT + signatureWidth * 2, signatureTop + 130f, signatureWidth, fonts.bold, 8f, 5.5f)
-        drawFittedCentered(canvas, "Số căn cước: ${data.guardianCitizenId}", LEFT + signatureWidth * 2, signatureTop + 143f, signatureWidth, fonts.regular, 7f, 5.2f)
-        drawFittedCentered(canvas, data.declarantName, LEFT + signatureWidth * 3, signatureTop + 130f, signatureWidth, fonts.bold, 8f, 5.5f)
+        if (!hideHeadEntry) {
+            drawWrappedCentered(canvas, data.headConsent, LEFT, signatureTop + 45f, signatureWidth, paint(fonts.regular, 6.2f), 7.5f, 3)
+            headSignature?.let { drawSignature(canvas, it, LEFT + 16f, signatureTop + 72f, signatureWidth - 32f, 43f) }
+            drawFittedCentered(canvas, data.headName, LEFT, signatureTop + 130f, signatureWidth, fonts.bold, 8f, 5.5f)
+        }
+        if (!hideOwnerEntry) {
+            drawWrappedCentered(canvas, data.ownerConsent, LEFT + signatureWidth, signatureTop + 45f, signatureWidth, paint(fonts.regular, 6.2f), 7.5f, 3)
+            effectiveOwnerSignature?.let { drawSignature(canvas, it, LEFT + signatureWidth + 16f, signatureTop + 72f, signatureWidth - 32f, 43f) }
+            drawFittedCentered(canvas, data.legalOwnerName, LEFT + signatureWidth, signatureTop + 130f, signatureWidth, fonts.bold, 8f, 5.5f)
+            if (data.legalOwnerCitizenId.isNotBlank()) drawFittedCentered(canvas, "Số định danh cá nhân: ${data.legalOwnerCitizenId}", LEFT + signatureWidth, signatureTop + 143f, signatureWidth, fonts.regular, 7f, 5.2f)
+        }
+        if (!hideGuardianEntry) {
+            drawWrappedCentered(canvas, data.guardianConsent, LEFT + signatureWidth * 2, signatureTop + 45f, signatureWidth, paint(fonts.regular, 6.2f), 7.5f, 3)
+            guardianSignature?.let { drawSignature(canvas, it, LEFT + signatureWidth * 2 + 16f, signatureTop + 72f, signatureWidth - 32f, 43f) }
+            drawFittedCentered(canvas, data.guardianName, LEFT + signatureWidth * 2, signatureTop + 130f, signatureWidth, fonts.bold, 8f, 5.5f)
+            if (data.guardianCitizenId.isNotBlank()) drawFittedCentered(canvas, "Số định danh cá nhân: ${data.guardianCitizenId}", LEFT + signatureWidth * 2, signatureTop + 143f, signatureWidth, fonts.regular, 7f, 5.2f)
+        }
+        if (!hideDeclarantEntry) {
+            declarantSignature?.let { drawSignature(canvas, it, LEFT + signatureWidth * 3 + 16f, signatureTop + 72f, signatureWidth - 32f, 43f) }
+            drawFittedCentered(canvas, data.declarantName, LEFT + signatureWidth * 3, signatureTop + 130f, signatureWidth, fonts.bold, 8f, 5.5f)
+        }
     }
 
     private fun drawNotes(canvas: Canvas, fonts: Fonts) {

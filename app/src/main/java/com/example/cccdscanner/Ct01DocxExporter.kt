@@ -40,7 +40,7 @@ object Ct01DocxExporter {
     private fun signatureCell(date: String, title: String, consent: String, name: String, citizenId: String, width: Int): String {
         fun line(text: String, bold: Boolean = false, italic: Boolean = false, size: Int = 18, after: Int = 25): String =
             "<w:p><w:pPr><w:jc w:val=\"center\"/><w:spacing w:after=\"$after\"/></w:pPr><w:r><w:rPr>${if (bold) "<w:b/>" else ""}${if (italic) "<w:i/>" else ""}<w:sz w:val=\"$size\"/></w:rPr><w:t xml:space=\"preserve\">${xml(text)}</w:t></w:r></w:p>"
-        val idLine = if (citizenId.isBlank()) "" else line("Số căn cước: $citizenId", false, false, 16)
+        val idLine = if (citizenId.isBlank()) "" else line("Số định danh cá nhân: $citizenId", false, false, 16)
         return "<w:tc><w:tcPr><w:tcW w:w=\"$width\" w:type=\"dxa\"/><w:vAlign w:val=\"top\"/></w:tcPr>" +
             line(date, false, true, 12, 55) + line(title, true, false, 17, 55) + line(consent, false, false, 15, 420) +
             line(name, true, false, 18, 30) + idLine + "</w:tc>"
@@ -53,6 +53,10 @@ object Ct01DocxExporter {
         }
         val date = data.signingDate.split('/')
         val dateText = if (date.size == 3) "${data.signingPlace}, ngày ${date[0]} tháng ${date[1]} năm ${date[2]}" else "${data.signingPlace}, ${data.signingDate}"
+        val headEntry = if (data.declarantIsHead()) Triple("", "", "") else Triple(data.headConsent, data.headName, "")
+        val ownerEntry = if (data.declarantIsOwner()) Triple("", "", "") else Triple(data.ownerConsent, data.legalOwnerName, data.legalOwnerCitizenId)
+        val guardianEntry = if (!data.requiresGuardian || data.declarantIsGuardian()) Triple("", "", "") else Triple(data.guardianConsent, data.guardianName, data.guardianCitizenId)
+        val declarantName = if (data.declarantFillsAllSignatureRoles()) "" else data.declarantName
         val notes = listOf(
             "(1) Cơ quan đăng ký cư trú.",
             "(2) Trường hợp đăng ký thường trú, đăng ký tạm trú, tách hộ ghi thông tin chủ hộ gia đình mới.",
@@ -93,10 +97,10 @@ ${paragraph("11. Những thành viên trong hộ gia đình cùng thay đổi:")
 <w:tbl><w:tblPr><w:tblW w:w="8825" w:type="dxa"/><w:tblBorders><w:top w:val="single" w:sz="6"/><w:left w:val="single" w:sz="6"/><w:bottom w:val="single" w:sz="6"/><w:right w:val="single" w:sz="6"/><w:insideH w:val="single" w:sz="6"/><w:insideV w:val="single" w:sz="6"/></w:tblBorders></w:tblPr>
 <w:tr>${cell("TT",449,true)}${cell("Họ, chữ đệm và tên",2575,true)}${cell("Ngày sinh",1495,true)}${cell("Giới tính",729,true)}${cell("Số định danh cá nhân",2084,true)}${cell("Quan hệ với chủ hộ",1493,true)}</w:tr>$members</w:tbl>
 <w:tbl><w:tblPr><w:tblW w:w="8825" w:type="dxa"/></w:tblPr><w:tr>
-${signatureCell(dateText,"Ý KIẾN CỦA CHỦ HỘ(4)",data.headConsent,data.headName,"",2206)}
-${signatureCell(dateText,"Ý KIẾN CỦA CHỦ SỞ HỮU CHỖ Ở HỢP PHÁP(5)",data.ownerConsent,data.legalOwnerName,data.legalOwnerCitizenId,2206)}
-${signatureCell(dateText,"Ý KIẾN CỦA CHA HOẶC MẸ HOẶC NGƯỜI GIÁM HỘ(6)",data.guardianConsent,data.guardianName,data.guardianCitizenId,2206)}
-${signatureCell(dateText,"NGƯỜI KÊ KHAI(7)","",data.declarantName,"",2207)}
+${signatureCell(dateText,"Ý KIẾN CỦA CHỦ HỘ(4)",headEntry.first,headEntry.second,headEntry.third,2206)}
+${signatureCell(dateText,"Ý KIẾN CỦA CHỦ SỞ HỮU CHỖ Ở HỢP PHÁP(5)",ownerEntry.first,ownerEntry.second,ownerEntry.third,2206)}
+${signatureCell(dateText,"Ý KIẾN CỦA CHA HOẶC MẸ HOẶC NGƯỜI GIÁM HỘ(6)",guardianEntry.first,guardianEntry.second,guardianEntry.third,2206)}
+${signatureCell(dateText,"NGƯỜI KÊ KHAI(7)","",declarantName,"",2207)}
 </w:tr></w:tbl>
 <w:p><w:r><w:br w:type="page"/></w:r></w:p>${paragraph("Chú thích:", true, false, 22, 120)}$notes
 <w:sectPr><w:pgSz w:w="11907" w:h="16840"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1701" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>
