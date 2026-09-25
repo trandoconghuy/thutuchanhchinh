@@ -126,6 +126,7 @@ class MainActivity : AppCompatActivity() {
     private var ct01ActiveSignatureView: SignatureView? = null
     private var ct01ActiveSignatureTarget: String? = null
     private var contractStep = 0
+    private var contractWizardVisible = false
     private var contractTenantPad: SignatureView? = null
     private var contractLandlordPad: SignatureView? = null
     private var scannerDialog: Dialog? = null
@@ -267,26 +268,29 @@ class MainActivity : AppCompatActivity() {
 
     private fun showContractWizard() {
         identityResultVisible = false; templateSelectionVisible = false; ct01Visible = false
+        contractWizardVisible = true
         topBar.visibility = View.GONE; bottomNavigation.visibility = View.GONE
         fields.clear(); contractTenantPad = null; contractLandlordPad = null
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(246, 245, 241)) }
         val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(16), dp(11), dp(14), dp(11)); setBackgroundColor(Color.rgb(22, 35, 63)) }
         header.addView(label("HĐ", 11f, Color.rgb(22, 35, 63), true).apply { gravity = Gravity.CENTER; background = rounded(Color.rgb(184, 134, 46), 18f) }, LinearLayout.LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(11) })
-        val title = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(label("Hợp đồng thuê nhà", 15f, Color.WHITE, true)); addView(label("Bước ${contractStep + 1} / 6", 11f, Color.rgb(190, 199, 218), false), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 2)) }
+        val title = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(label("Hợp đồng thuê nhà", 15f, Color.WHITE, true)); addView(label("Bước ${contractStep + 1} / 7", 11f, Color.rgb(190, 199, 218), false), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 2)) }
         header.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         header.addView(iconButton("×", "Đóng hợp đồng") { lastScannedCitizen?.let { showTemplateSelection(it) } ?: showScanHome() }, LinearLayout.LayoutParams(dp(40), dp(40)))
         root.addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(64)))
         val progress = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(14), dp(10), dp(14), dp(7)) }
-        repeat(6) { index -> progress.addView(View(this).apply { background = rounded(if (index <= contractStep) Color.rgb(184, 134, 46) else Color.rgb(227, 225, 218), 3f) }, LinearLayout.LayoutParams(0, dp(4), 1f).apply { if (index < 5) marginEnd = dp(4) }) }
+        repeat(7) { index -> progress.addView(View(this).apply { background = rounded(if (index <= contractStep) Color.rgb(184, 134, 46) else Color.rgb(227, 225, 218), 3f) }, LinearLayout.LayoutParams(0, dp(4), 1f).apply { if (index < 6) marginEnd = dp(4) }) }
         root.addView(progress)
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(8), dp(18), dp(24)) }
         buildContractWizardStep(body)
-        root.addView(ScrollView(this).apply { isFillViewport = true; addView(body) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        if (contractStep == 5) root.addView(body, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        else root.addView(ScrollView(this).apply { isFillViewport = true; isSmoothScrollingEnabled = true; addView(body) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         val navigation = LinearLayout(this).apply { gravity = Gravity.CENTER; setPadding(dp(16), dp(10), dp(16), dp(14)); setBackgroundColor(Color.rgb(246, 245, 241)) }
         if (contractStep > 0) navigation.addView(actionButton("Quay lại", Color.TRANSPARENT, navy) { persistContractWizardStep(); contractStep--; showContractWizard() }, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(6) })
-        navigation.addView(actionButton(if (contractStep == 5) "Về biểu mẫu" else "Tiếp tục", Color.rgb(22, 35, 63)) {
+        val nextLabel = when (contractStep) { 5 -> "Kiểm tra xong"; 6 -> "Về biểu mẫu"; else -> "Tiếp tục" }
+        navigation.addView(actionButton(nextLabel, Color.rgb(22, 35, 63)) {
             persistContractWizardStep()
-            if (contractStep == 5) lastScannedCitizen?.let { showTemplateSelection(it) } ?: showScanHome()
+            if (contractStep == 6) lastScannedCitizen?.let { showTemplateSelection(it) } ?: showScanHome()
             else if (validateContractWizardStep()) { contractStep++; showContractWizard() }
         }, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = if (contractStep > 0) dp(6) else 0 })
         root.addView(navigation); swapContent(root)
@@ -329,12 +333,18 @@ class MainActivity : AppCompatActivity() {
                 contractTenantPad = tenant.second; body.addView(tenant.first)
             }
             else -> {
-                wizardHeading(body, "B6 · Xem trước và xuất file", "Hợp đồng đã sẵn sàng", "Kiểm tra hai trang A4 trước khi lưu hoặc chia sẻ.")
-                body.addView(ZoomableImageView(this).apply { setImageBitmap(ContractRenderer.renderBitmap(this@MainActivity, contract, tenantSignature, landlordSignature, 2)); background = rounded(Color.rgb(232, 236, 243), 8f, Color.rgb(210, 214, 222)) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(520)))
-                body.addView(space(1, 12))
-                wizardExportRow(body, "PDF", "Xuất file PDF", "Hai trang A4 đúng mẫu hợp đồng") { openPdf() }
-                wizardExportRow(body, "PNG", "Lưu hình ảnh", "Ghép hai trang trong một ảnh") { saveImage() }
-                wizardExportRow(body, "↗", "Chia sẻ PDF", "Gửi qua ứng dụng có trên điện thoại") { sharePdf() }
+                if (contractStep == 5) {
+                wizardHeading(body, "B6 · Xem trước", "Kiểm tra hợp đồng", "Vùng xem trước hoạt động độc lập: chụm để phóng to, kéo để di chuyển, chạm hai lần để đặt lại.")
+                body.addView(ZoomableImageView(this).apply {
+                    setImageBitmap(ContractRenderer.renderBitmap(this@MainActivity, contract, tenantSignature, landlordSignature, 2))
+                    background = rounded(Color.rgb(232, 236, 243), 8f, Color.rgb(210, 214, 222)); contentDescription = "Bản xem trước hợp đồng. Có thể phóng to và di chuyển bằng cảm ứng."
+                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+                } else {
+                    wizardHeading(body, "B7 · Hoàn tất", "Hợp đồng đã sẵn sàng", "Xuất file, lưu hình hoặc chia sẻ qua ứng dụng trên điện thoại.")
+                    wizardExportRow(body, "PDF", "Xuất file PDF", "Hai trang A4 đúng mẫu hợp đồng") { openPdf() }
+                    wizardExportRow(body, "PNG", "Lưu hình ảnh", "Ghép hai trang trong một ảnh") { saveImage() }
+                    wizardExportRow(body, "↗", "Chia sẻ PDF", "Gửi qua Zalo, email, Drive hoặc ứng dụng khác") { sharePdf() }
+                }
             }
         }
     }
@@ -397,6 +407,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showScanHome() {
+        contractWizardVisible = false
         identityResultVisible = false
         templateSelectionVisible = false
         ct01Visible = false
@@ -716,6 +727,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun openPdf() {
         collectForm()
+        if (!validateContractForExport()) return
         runCatching {
             val file = ContractRenderer.createPdf(this, contract, tenantSignature, landlordSignature)
             val uri = fileUri(file)
@@ -733,6 +745,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun sharePdf() {
         collectForm()
+        if (!validateContractForExport()) return
         runCatching {
             val file = ContractRenderer.createPdf(this, contract, tenantSignature, landlordSignature)
             startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
@@ -746,6 +759,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveImage() {
         collectForm()
+        if (!validateContractForExport()) return
         toast("Đang ghép 02 trang A4 vào một hình…")
         Thread {
             runCatching {
@@ -766,12 +780,22 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
+    private fun validateContractForExport(): Boolean {
+        fun reject(message: String): Boolean { toast(message); return false }
+        if (contract.time.isBlank() || contract.date.isBlank() || contract.place.isBlank()) return reject("Hợp đồng còn thiếu thời gian, ngày hoặc địa điểm lập")
+        if (contract.landlord.name.isBlank() || !contract.landlord.citizenId.matches(Regex("\\d{12}"))) return reject("Thông tin Bên A chưa đầy đủ hoặc CCCD chưa đúng 12 số")
+        if (contract.tenant.name.isBlank() || !contract.tenant.citizenId.matches(Regex("\\d{12}"))) return reject("Thông tin Bên B chưa đầy đủ hoặc CCCD chưa đúng 12 số")
+        if (contract.area.isBlank() || contract.duration.isBlank() || contract.monthlyRent.isBlank()) return reject("Hợp đồng còn thiếu diện tích, thời hạn hoặc giá thuê")
+        return true
+    }
+
     private fun publishToDownloads(source: File, mimeType: String) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, source.name)
             put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/HopDong")
+            val folder = if (source.name.contains("CT01", ignoreCase = true) || source.parentFile?.name.equals("CT01", ignoreCase = true)) "CT01" else "HopDong"
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/$folder")
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
         val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
@@ -1146,6 +1170,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showIdentityResult(citizen: ScannedCitizen) {
+        contractWizardVisible = false
         lastScannedCitizen = citizen
         identityResultVisible = true
         templateSelectionVisible = false
@@ -1220,6 +1245,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showTemplateSelection(citizen: ScannedCitizen) {
+        contractWizardVisible = false
         identityResultVisible = false
         templateSelectionVisible = true
         ct01Visible = false
@@ -1399,6 +1425,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showCt01Wizard() {
+        contractWizardVisible = false
         identityResultVisible = false; templateSelectionVisible = false; ct01Visible = true
         topBar.visibility = View.GONE; bottomNavigation.visibility = View.GONE
         ct01Fields.clear(); ct01ActiveSignatureView = null; ct01ActiveSignatureTarget = null
@@ -1413,30 +1440,31 @@ class MainActivity : AppCompatActivity() {
         }, LinearLayout.LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(11) })
         val title = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         title.addView(label("Tờ khai CT01 — Đăng ký tạm trú", 15f, Color.WHITE, true))
-        title.addView(label("Bước ${ct01Step + 1} / 10", 11f, Color.rgb(190, 199, 218), false), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 2))
+        title.addView(label("Bước ${ct01Step + 1} / 11", 11f, Color.rgb(190, 199, 218), false), margins(ViewGroup.LayoutParams.WRAP_CONTENT, top = 2))
         header.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         header.addView(iconButton("×", "Đóng CT01") { lastScannedCitizen?.let { showTemplateSelection(it) } ?: showScanHome() }, LinearLayout.LayoutParams(dp(40), dp(40)))
         root.addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(64)))
 
         val progress = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(14), dp(10), dp(14), dp(7)) }
-        repeat(10) { index ->
+        repeat(11) { index ->
             progress.addView(View(this).apply { background = rounded(if (index <= ct01Step) Color.rgb(184, 134, 46) else Color.rgb(227, 225, 218), 3f) },
-                LinearLayout.LayoutParams(0, dp(4), 1f).apply { if (index < 9) marginEnd = dp(4) })
+                LinearLayout.LayoutParams(0, dp(4), 1f).apply { if (index < 10) marginEnd = dp(3) })
         }
         root.addView(progress)
 
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(8), dp(18), dp(24)) }
         buildCt01WizardStep(body)
-        root.addView(ScrollView(this).apply { isFillViewport = true; addView(body) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        if (ct01Step == 9) root.addView(body, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        else root.addView(ScrollView(this).apply { isFillViewport = true; isSmoothScrollingEnabled = true; addView(body) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
         val navigation = LinearLayout(this).apply { gravity = Gravity.CENTER; setPadding(dp(16), dp(10), dp(16), dp(14)); setBackgroundColor(Color.rgb(246, 245, 241)) }
         if (ct01Step > 0) navigation.addView(actionButton("Quay lại", Color.TRANSPARENT, navy) {
             persistCt01WizardStep(); ct01Step--; showCt01Wizard()
         }, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(6) })
-        val nextLabel = when (ct01Step) { 8 -> "Kiểm tra xong"; 9 -> "Về biểu mẫu"; else -> "Tiếp tục" }
+        val nextLabel = when (ct01Step) { 9 -> "Kiểm tra xong"; 10 -> "Về biểu mẫu"; else -> "Tiếp tục" }
         navigation.addView(actionButton(nextLabel, Color.rgb(22, 35, 63)) {
             persistCt01WizardStep()
-            if (ct01Step == 9) lastScannedCitizen?.let { showTemplateSelection(it) } ?: showScanHome()
+            if (ct01Step == 10) lastScannedCitizen?.let { showTemplateSelection(it) } ?: showScanHome()
             else if (validateCt01WizardStep()) { ct01Step++; showCt01Wizard() }
         }, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = if (ct01Step > 0) dp(6) else 0 })
         root.addView(navigation)
@@ -1518,27 +1546,30 @@ class MainActivity : AppCompatActivity() {
                     "Tôi đồng ý cho ${ct01Data.declarantName.ifBlank { "người được giám hộ" }} đăng ký tạm trú theo nội dung đã khai.", ct01Data.guardianAgreed, ct01GuardianSignature)
             }
             8 -> {
-                wizardHeading(body, "B9 · Xem trước", "Đúng như bản giấy sẽ nộp", "Chụm hai ngón để phóng to và kéo để kiểm tra toàn bộ hai trang A4.")
-                body.addView(label("Thành viên cùng thay đổi — Mục 11", 14f, navy, true), margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 6))
+                wizardHeading(body, "B9 · Thành viên cùng thay đổi", "Những người cùng chuyển đến", "Bỏ qua nếu làm một mình; mẫu CT01 cho phép tối đa 09 dòng thành viên.")
                 val memberText = if (ct01Data.members.isEmpty()) "Không có thành viên đi cùng" else ct01Data.members.joinToString("\n") { "• ${it.name} · ${it.citizenId.takeLast(4)} · ${it.relationship}" }
                 body.addView(label(memberText, 12f, Color.rgb(79, 88, 105), false).apply { setPadding(dp(12), dp(10), dp(12), dp(10)); background = rounded(Color.WHITE, 10f, Color.rgb(227, 225, 218)) }, margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 8))
-                val memberActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-                memberActions.addView(actionButton("Thư viện", Color.WHITE, deepBlue) { showCt01MemberPicker() }, LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginEnd = dp(4) })
-                memberActions.addView(actionButton("Quét QR", Color.WHITE, deepBlue) { pendingCt01ScanTarget = "member"; startCameraScan() }, LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginStart = dp(4); marginEnd = dp(4) })
-                memberActions.addView(actionButton("+ Thêm", Color.WHITE, deepBlue) { showAddCt01MemberDialog() }, LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginStart = dp(4) })
-                body.addView(memberActions, margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 10))
+                body.addView(actionButton("Quét QR CCCD thành viên", Color.rgb(22, 35, 63)) { pendingCt01ScanTarget = "member"; startCameraScan() }, margins(dp(48), bottom = 8))
+                body.addView(actionButton("Chọn thành viên từ thư viện", Color.WHITE, deepBlue) { showCt01MemberPicker() }, margins(dp(46), bottom = 8))
+                body.addView(actionButton("+ Thêm thành viên thủ công", Color.WHITE, deepBlue) { showAddCt01MemberDialog() }, margins(dp(46), bottom = 8))
                 if (ct01Data.members.isNotEmpty()) body.addView(actionButton("Kiểm tra giới tính và quan hệ", Color.WHITE, green) { showCt01MemberEditor() }, margins(dp(43), bottom = 10))
+                wizardSkip(body, if (ct01Data.members.isEmpty()) "Nếu làm thủ tục một mình, bạn có thể tiếp tục mà không cần thêm thành viên." else "${ct01Data.members.size} thành viên sẽ được đưa vào bảng Mục 11 đúng thứ tự.")
+            }
+            9 -> {
+                wizardHeading(body, "B10 · Xem trước", "Đúng như bản giấy sẽ nộp", "Vùng xem trước hoạt động độc lập: chụm để phóng to, kéo để di chuyển, chạm hai lần để đặt lại.")
                 body.addView(ct01SignatureStatusCard(), margins(ViewGroup.LayoutParams.WRAP_CONTENT, bottom = 10))
                 body.addView(ZoomableImageView(this).apply {
                     setImageBitmap(Ct01Renderer.renderBitmap(this@MainActivity, ct01Data, ct01DeclarantSignature, ct01OwnerSignature, ct01HeadSignature, ct01GuardianSignature, 2))
                     background = rounded(Color.rgb(232, 236, 243), 8f, Color.rgb(210, 214, 222))
-                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(560)))
+                    contentDescription = "Bản xem trước hai trang CT01. Có thể phóng to và di chuyển bằng cảm ứng."
+                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
             }
             else -> {
-                wizardHeading(body, "B10 · Hoàn tất", "Tờ khai đã sẵn sàng", "Xuất đúng định dạng cần dùng hoặc mở hướng dẫn nộp trực tuyến.")
+                wizardHeading(body, "B11 · Hoàn tất", "Tờ khai đã sẵn sàng", "Xuất đúng định dạng, chia sẻ hoặc mở hướng dẫn nộp trực tuyến.")
                 wizardExportRow(body, "PDF", "Xuất file PDF", "Khổ A4, dùng để in và nộp trực tiếp") { createCt01Pdf() }
                 wizardExportRow(body, "DOC", "Xuất file Word", "Có thể chỉnh sửa trên Microsoft Word") { createCt01Docx() }
                 wizardExportRow(body, "PNG", "Xuất hình ảnh", "Ghép hai trang trong một ảnh chất lượng cao") { saveCt01Image() }
+                wizardExportRow(body, "↗", "Chia sẻ PDF", "Gửi qua Zalo, email, Drive hoặc ứng dụng khác") { shareCt01Pdf() }
                 wizardExportRow(body, "↗", "Hướng dẫn nộp online", "Cổng DVC Bộ Công an hoặc VNeID") { showCt01OnlineGuide() }
             }
         }
@@ -1671,6 +1702,10 @@ class MainActivity : AppCompatActivity() {
             5 -> if (ct01Data.householdType != "Lập hộ tạm trú riêng" && (ct01Data.headName.isBlank() || !ct01Data.headAgreed)) reject("Vui lòng quét CCCD và xác nhận ý kiến chủ hộ") else true
             6 -> if (!ct01Data.headIsLegalOwner && (ct01Data.legalOwnerName.isBlank() || !ct01Data.ownerAgreed)) reject("Vui lòng quét CCCD và xác nhận ý kiến chủ sở hữu") else true
             7 -> if (ct01Data.requiresGuardian && (ct01Data.guardianName.isBlank() || !ct01Data.guardianAgreed)) reject("Vui lòng bổ sung người giám hộ và xác nhận đồng ý") else true
+            8 -> {
+                val invalid = ct01Data.members.firstOrNull { it.name.isBlank() || !it.citizenId.matches(Regex("\\d{12}")) || it.gender !in listOf("Nam", "Nữ") || it.relationship.isBlank() }
+                if (invalid != null) reject("Vui lòng kiểm tra lại thông tin của ${invalid.name.ifBlank { "thành viên" }}") else true
+            }
             else -> true
         }
     }
@@ -2124,6 +2159,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun shareCt01Pdf() {
+        collectCt01Form()
+        if (!validateCt01()) return
+        runCatching {
+            val file = Ct01Renderer.createPdf(this, ct01Data, ct01DeclarantSignature, ct01OwnerSignature, ct01HeadSignature, ct01GuardianSignature)
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                type = "application/pdf"
+                putExtra(Intent.EXTRA_SUBJECT, "Tờ khai CT01 - ${ct01Data.declarantName}")
+                putExtra(Intent.EXTRA_STREAM, fileUri(file))
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }, "Chia sẻ tờ khai CT01"))
+        }.onFailure { toast("Không thể chia sẻ CT01: ${it.message ?: "lỗi không xác định"}") }
+    }
+
     private fun createCt01Docx() {
         collectCt01Form()
         if (!validateCt01()) return
@@ -2249,6 +2298,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showAppChrome() {
+        contractWizardVisible = false
         identityResultVisible = false
         templateSelectionVisible = false
         ct01Visible = false
@@ -2262,7 +2312,10 @@ class MainActivity : AppCompatActivity() {
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         when {
+            ct01Visible && ct01Step > 0 -> { persistCt01WizardStep(); ct01Step--; showCt01Wizard() }
             ct01Visible -> lastScannedCitizen?.let { showTemplateSelection(it) } ?: showScanHome()
+            contractWizardVisible && contractStep > 0 -> { persistContractWizardStep(); contractStep--; showContractWizard() }
+            contractWizardVisible -> lastScannedCitizen?.let { showTemplateSelection(it) } ?: showScanHome()
             templateSelectionVisible -> lastScannedCitizen?.let { showIdentityResult(it) } ?: showScanHome()
             identityResultVisible -> showForm()
             else -> super.onBackPressed()

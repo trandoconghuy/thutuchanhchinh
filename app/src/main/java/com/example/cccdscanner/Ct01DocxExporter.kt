@@ -73,12 +73,11 @@ ${paragraph("10. Nội dung đề nghị(3): ${data.requestContent}")}
 ${paragraph("11. Những thành viên trong hộ gia đình cùng thay đổi:")}
 <w:tbl><w:tblPr><w:tblW w:w="8825" w:type="dxa"/><w:tblBorders><w:top w:val="single" w:sz="6"/><w:left w:val="single" w:sz="6"/><w:bottom w:val="single" w:sz="6"/><w:right w:val="single" w:sz="6"/><w:insideH w:val="single" w:sz="6"/><w:insideV w:val="single" w:sz="6"/></w:tblBorders></w:tblPr>
 <w:tr>${cell("TT",449,true)}${cell("Họ, chữ đệm và tên",2575,true)}${cell("Ngày sinh",1495,true)}${cell("Giới tính",729,true)}${cell("Số định danh cá nhân",2084,true)}${cell("Quan hệ với chủ hộ",1493,true)}</w:tr>$members</w:tbl>
-${paragraph(dateText, false, true, 18, 50)}
 <w:tbl><w:tblPr><w:tblW w:w="8825" w:type="dxa"/></w:tblPr><w:tr>
-${cell("Ý KIẾN CỦA CHỦ HỘ(4)\n${data.headConsent}\n\n${data.headName}",2206,true)}
-${cell("Ý KIẾN CỦA CHỦ SỞ HỮU CHỖ Ở HỢP PHÁP(5)(8)\n${data.ownerConsent}\n\n${data.legalOwnerName}\n${data.legalOwnerCitizenId}",2206,true)}
-${cell("Ý KIẾN CỦA CHA HOẶC MẸ HOẶC NGƯỜI GIÁM HỘ(6)(8)\n${data.guardianConsent}\n\n${data.guardianName}\n${data.guardianCitizenId}",2206,true)}
-${cell("NGƯỜI KÊ KHAI(7)\n\n\n${data.declarantName}",2207,true)}
+${cell("$dateText\nÝ KIẾN CỦA CHỦ HỘ(4)\n${data.headConsent}\n\n${data.headName}",2206,true)}
+${cell("$dateText\nÝ KIẾN CỦA CHỦ SỞ HỮU CHỖ Ở HỢP PHÁP(5)(8)\n${data.ownerConsent}\n\n${data.legalOwnerName}\n${data.legalOwnerCitizenId}",2206,true)}
+${cell("$dateText\nÝ KIẾN CỦA CHA HOẶC MẸ HOẶC NGƯỜI GIÁM HỘ(6)(8)\n${data.guardianConsent}\n\n${data.guardianName}\n${data.guardianCitizenId}",2206,true)}
+${cell("$dateText\nNGƯỜI KÊ KHAI(7)\n\n\n${data.declarantName}",2207,true)}
 </w:tr></w:tbl>
 <w:p><w:r><w:br w:type="page"/></w:r></w:p>${paragraph("Chú thích:", true, false, 22, 120)}$notes
 <w:sectPr><w:pgSz w:w="11907" w:h="16840"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1701" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>

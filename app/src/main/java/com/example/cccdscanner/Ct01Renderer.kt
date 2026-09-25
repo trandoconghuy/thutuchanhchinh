@@ -146,23 +146,23 @@ object Ct01Renderer {
         val signatureWidth = width / 4f
         val signatureTop = y
         val titles = arrayOf("Ý KIẾN CỦA\nCHỦ HỘ(4)", "Ý KIẾN CỦA CHỦ SỞ HỮU\nCHỖ Ở HỢP PHÁP(5)(8)", "Ý KIẾN CỦA CHA HOẶC MẸ\nHOẶC NGƯỜI GIÁM HỘ(6)(8)", "NGƯỜI KÊ KHAI(7)")
-        titles.forEachIndexed { index, text -> drawMultilineCentered(canvas, text, LEFT + index * signatureWidth, signatureTop, signatureWidth, smallBold, 10f) }
         val dateParts = data.signingDate.split('/')
         val dateText = if (dateParts.size == 3) "${data.signingPlace}, ngày ${dateParts[0]} tháng ${dateParts[1]} năm ${dateParts[2]}" else "${data.signingPlace}, ${data.signingDate}"
-        repeat(4) { index -> drawWrappedCentered(canvas, dateText, LEFT + signatureWidth * index, signatureTop + 22f, signatureWidth, paint(fonts.italic, 6.2f), 7f, 2) }
-        drawWrappedCentered(canvas, data.headConsent, LEFT, signatureTop + 38f, signatureWidth, paint(fonts.regular, 6.5f), 8f, 2)
+        repeat(4) { index -> drawWrappedCentered(canvas, dateText, LEFT + signatureWidth * index, signatureTop, signatureWidth, paint(fonts.italic, 6.2f), 7f, 2) }
+        titles.forEachIndexed { index, text -> drawMultilineCentered(canvas, text, LEFT + index * signatureWidth, signatureTop + 19f, signatureWidth, smallBold, 10f) }
+        drawWrappedCentered(canvas, data.headConsent, LEFT, signatureTop + 41f, signatureWidth, paint(fonts.regular, 6.5f), 8f, 2)
         drawCenteredIn(canvas, data.headName, LEFT, signatureTop + 111f, signatureWidth, smallBold)
-        drawWrappedCentered(canvas, data.ownerConsent, LEFT + signatureWidth, signatureTop + 38f, signatureWidth, paint(fonts.regular, 6.5f), 8f, 2)
+        drawWrappedCentered(canvas, data.ownerConsent, LEFT + signatureWidth, signatureTop + 41f, signatureWidth, paint(fonts.regular, 6.5f), 8f, 2)
         drawCenteredIn(canvas, data.legalOwnerName, LEFT + signatureWidth, signatureTop + 99f, signatureWidth, smallBold)
         drawCenteredIn(canvas, data.legalOwnerCitizenId, LEFT + signatureWidth, signatureTop + 111f, signatureWidth, small)
-        drawWrappedCentered(canvas, data.guardianConsent, LEFT + signatureWidth * 2, signatureTop + 38f, signatureWidth, paint(fonts.regular, 6.5f), 8f, 2)
+        drawWrappedCentered(canvas, data.guardianConsent, LEFT + signatureWidth * 2, signatureTop + 41f, signatureWidth, paint(fonts.regular, 6.5f), 8f, 2)
         drawCenteredIn(canvas, data.guardianName, LEFT + signatureWidth * 2, signatureTop + 99f, signatureWidth, smallBold)
         drawCenteredIn(canvas, data.guardianCitizenId, LEFT + signatureWidth * 2, signatureTop + 111f, signatureWidth, small)
         drawCenteredIn(canvas, data.declarantName, LEFT + signatureWidth * 3, signatureTop + 111f, signatureWidth, smallBold)
-        headSignature?.let { drawSignature(canvas, it, LEFT + 13f, signatureTop + 42f, signatureWidth - 26f, 50f) }
-        ownerSignature?.let { drawSignature(canvas, it, LEFT + signatureWidth + 13f, signatureTop + 47f, signatureWidth - 26f, 44f) }
-        guardianSignature?.let { drawSignature(canvas, it, LEFT + signatureWidth * 2 + 13f, signatureTop + 42f, signatureWidth - 26f, 50f) }
-        declarantSignature?.let { drawSignature(canvas, it, LEFT + signatureWidth * 3 + 13f, signatureTop + 42f, signatureWidth - 26f, 50f) }
+        headSignature?.let { drawSignature(canvas, it, LEFT + 13f, signatureTop + 48f, signatureWidth - 26f, 45f) }
+        ownerSignature?.let { drawSignature(canvas, it, LEFT + signatureWidth + 13f, signatureTop + 48f, signatureWidth - 26f, 43f) }
+        guardianSignature?.let { drawSignature(canvas, it, LEFT + signatureWidth * 2 + 13f, signatureTop + 48f, signatureWidth - 26f, 45f) }
+        declarantSignature?.let { drawSignature(canvas, it, LEFT + signatureWidth * 3 + 13f, signatureTop + 48f, signatureWidth - 26f, 45f) }
     }
 
     private fun drawNotes(canvas: Canvas, fonts: Fonts) {

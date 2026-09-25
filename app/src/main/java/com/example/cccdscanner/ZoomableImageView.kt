@@ -55,6 +55,8 @@ class ZoomableImageView @JvmOverloads constructor(
     init {
         scaleType = ScaleType.MATRIX
         isClickable = true
+        isHapticFeedbackEnabled = false
+        setLayerType(LAYER_TYPE_HARDWARE, null)
     }
 
     override fun setImageDrawable(drawable: Drawable?) {
@@ -77,12 +79,19 @@ class ZoomableImageView @JvmOverloads constructor(
                 lastY = event.y
                 dragging = true
             }
-            MotionEvent.ACTION_MOVE -> if (dragging && !scaleDetector.isInProgress) {
-                drawMatrix.postTranslate(event.x - lastX, event.y - lastY)
-                lastX = event.x
-                lastY = event.y
-                constrainMatrix()
-                imageMatrix = drawMatrix
+            MotionEvent.ACTION_MOVE -> if (dragging) {
+                if (scaleDetector.isInProgress) {
+                    lastX = event.x; lastY = event.y
+                } else {
+                    drawMatrix.postTranslate(event.x - lastX, event.y - lastY)
+                    lastX = event.x; lastY = event.y
+                    constrainMatrix(); imageMatrix = drawMatrix
+                    postInvalidateOnAnimation()
+                }
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                val remaining = if (event.actionIndex == 0) 1 else 0
+                if (remaining < event.pointerCount) { lastX = event.getX(remaining); lastY = event.getY(remaining) }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 dragging = false
